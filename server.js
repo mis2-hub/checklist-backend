@@ -13,6 +13,7 @@ import workingDayRoutes from "./routes/workingDayRoutes.js"
 import taskDetailsRoutes from "./routes/taskDetailsRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js"
 import dashboardRoutes from "./routes/dashboardRoutes.js"
+import authRoutes from "./routes/authRoutes.js"
 
 
 dotenv.config();
@@ -40,6 +41,7 @@ app.use("/api/working-days", workingDayRoutes)
 app.use("/api/task-details", taskDetailsRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/auth", authRoutes);
 
 
 const PORT = process.env.PORT || 5050;
