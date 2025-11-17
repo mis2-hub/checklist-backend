@@ -12,10 +12,16 @@ export const getPendingChecklist = async (req, res) => {
     const limit = 50;
     const offset = (page - 1) * limit;
 
+    // let where = `
+    //   submission_date IS NULL
+    //   AND task_start_date <= NOW()
+    // `;
+
     let where = `
-      submission_date IS NULL
-      AND task_start_date <= NOW()
-    `;
+  submission_date IS NULL
+  AND DATE(task_start_date) <= CURRENT_DATE
+`;
+
 
     // ⭐ If user is NOT admin → filter by name
     if (role !== "admin" && username) {
