@@ -21,20 +21,34 @@ const upload = multer({ storage });
 
 // 3️⃣ Upload function to S3
 export const uploadToS3 = async (file) => {
-  const params = {
-    Bucket: process.env.AWS_BUCKET_NAME,
-    Key: `uploads/${Date.now()}_${file.originalname}`,
-    Body: file.buffer,
-    ContentType: file.mimetype,
-  };
+  try {
+    console.log("🚀 uploadToS3 called with:", {
+      name: file.originalname,
+      type: file.mimetype,
+      size: file.buffer?.length
+    });
 
-  const parallelUploads3 = new Upload({
-    client: s3,
-    params,
-  });
+    const params = {
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: `uploads/${Date.now()}_${file.originalname}`,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    };
 
-  await parallelUploads3.done();
-  return `https://${process.env.AWS_BUCKET_NAME}.s3.amazonaws.com/${params.Key}`;
+    const parallelUploads3 = new Upload({
+      client: s3,
+      params,
+    });
+
+    const result = await parallelUploads3.done();
+    console.log("✅ Uploaded to S3:", result.Location || params.Key);
+
+    return `https://${process.env.AWS_BUCKET_NAME}.s3.amazonaws.com/${params.Key}`;
+  } catch (err) {
+    console.error("❌ Error uploading to S3:", err);
+    throw err;
+  }
 };
+
 
 export default upload;

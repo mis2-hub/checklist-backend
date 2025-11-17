@@ -1,23 +1,33 @@
 import express from "express";
 import {
-  getDashboardStats,
-  getMaintenanceCostByMachine,
-  getDepartmentCostBreakdown,
-  getFrequencyStats,
+  getDashboardData,
+  getTotalTask,
+  getCompletedTask,
+  getPendingTask,
+  getOverdueTask,
+  getUniqueDepartments,
+  getStaffByDepartment,
+  getChecklistByDateRange,
+  getChecklistStatsByDate
 } from "../controllers/dashboardController.js";
 
 const router = express.Router();
 
-// ✅ Dashboard summary stats
-router.get("/stats", getDashboardStats);
+// MAIN FETCH
+router.get("/", getDashboardData);
 
-// ✅ Maintenance cost grouped by machine
-router.get("/maintenance-costs", getMaintenanceCostByMachine);
+// COUNT APIs
+router.get("/total", getTotalTask);
+router.get("/completed", getCompletedTask);
+router.get("/pending", getPendingTask);
+router.get("/overdue", getOverdueTask);
 
-// ✅ Department cost breakdown
-router.get("/department-costs", getDepartmentCostBreakdown);
+// FILTER LISTS
+router.get("/departments", getUniqueDepartments);
+router.get("/staff", getStaffByDepartment);
 
-// ✅ Frequency stats
-router.get("/frequencies", getFrequencyStats);
+// DATE RANGE
+router.get("/checklist/date-range", getChecklistByDateRange);
+router.get("/checklist/date-range/stats", getChecklistStatsByDate);
 
 export default router;
