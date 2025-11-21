@@ -64,7 +64,6 @@ import settingRoutes from "./routes/settingRoutes.js";
 import staffTasksRoutes from "./routes/staffTasksRoutes.js";
 import quickTaskRoutes from "./routes/quickTaskRoutes.js";
 import loginRoutes from "./routes/loginRoutes.js";
-import deviceRoutes from "./routes/deviceRoutes.js";
 
 dotenv.config();
 
@@ -83,7 +82,6 @@ app.use("/api/settings", settingRoutes);
 app.use("/api/staff-tasks", staffTasksRoutes);
 app.use("/api/tasks", quickTaskRoutes);
 app.use("/api/login", loginRoutes);
-app.use("/api", deviceRoutes);
 
 // SERVER RUN
 const PORT = process.env.PORT || 5000;
