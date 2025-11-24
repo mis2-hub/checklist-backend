@@ -8,7 +8,8 @@ import {
   getUniqueDepartments,
   getStaffByDepartment,
   getChecklistByDateRange,
-  getChecklistStatsByDate
+  getChecklistStatsByDate,
+  getNotDoneTask
 } from "../controllers/dashboardController.js";
 
 const router = express.Router();
@@ -21,6 +22,7 @@ router.get("/total", getTotalTask);
 router.get("/completed", getCompletedTask);
 router.get("/pending", getPendingTask);
 router.get("/overdue", getOverdueTask);
+router.get("/not-done", getNotDoneTask);
 
 // FILTER LISTS
 router.get("/departments", getUniqueDepartments);

@@ -179,6 +179,7 @@ export const getCompletedTask = async (req, res) => {
 
 export const getPendingTask = async (req, res) => {
   try {
+    console.log("Ram Rams");
     const { dashboardType, staffFilter, departmentFilter, role, username } = req.query;
 
     const table = dashboardType;
@@ -206,6 +207,46 @@ export const getPendingTask = async (req, res) => {
     res.status(500).json({ error: "Error fetching pending tasks" });
   }
 };
+
+
+export const getNotDoneTask = async (req, res) => {
+  console.log("🔥 getNotDoneTask HIT");
+
+  try {
+    const { dashboardType, staffFilter, departmentFilter, role, username } = req.query;
+    const table = dashboardType;
+
+    let query = `
+      SELECT COUNT(*) AS count
+      FROM ${table}
+      WHERE status = 'no'
+      AND submission_date IS NOT NULL
+    `;
+
+    if (role === "user" && username) {
+      query += ` AND name = '${username}'`;
+    }
+
+    if (role === "admin" && staffFilter !== "all") {
+      query += ` AND name = '${staffFilter}'`;
+    }
+
+    if (dashboardType === "checklist" && departmentFilter !== "all") {
+      query += ` AND department = '${departmentFilter}'`;
+    }
+
+    console.log("NOT DONE QUERY =>", query);
+
+    const result = await pool.query(query);
+
+    res.json(Number(result.rows[0].count || 0));
+
+  } catch (err) {
+    console.error("❌ NOT DONE ERROR:", err.message);
+    res.status(500).json({ error: "Error fetching not done tasks" });
+  }
+};
+
 
 
 
