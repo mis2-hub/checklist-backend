@@ -54,48 +54,34 @@ export const getDashboardData = async (req, res) => {
     }
 
     // ---------------------------
-    // IMPORTANT FIX: For "all" taskView, show ALL tasks in current month
-    // For specific views, show tasks within current month for that view
-    // ---------------------------
-    if (taskView === "all") {
-      // For "all" view: Show all tasks from 1st of month to current date
-      query += `
-        AND task_start_date >= '${firstDayStr} 00:00:00'
-        AND task_start_date <= '${currentDayStr} 23:59:59'
-      `;
-    } else {
-      // For specific views: Apply both current month AND specific date filters
-      query += `
-        AND task_start_date >= '${firstDayStr} 00:00:00'
-        AND task_start_date <= '${currentDayStr} 23:59:59'
-      `;
-    }
-
-    // ---------------------------
-    // TASK VIEW FILTERS (for specific views within current month)
+    // TASK VIEW FILTERS
     // ---------------------------
     if (taskView === "recent") {
-      // TODAY TASKS within current month
+      // TODAY TASKS
       query += `
-        AND task_start_date >= CURRENT_DATE
-        AND task_start_date < CURRENT_DATE + INTERVAL '1 day'
+        AND task_start_date::date = CURRENT_DATE
       `;
 
+      // For checklist: status is enum 'yes'/'no', compare directly
       if (dashboardType === "checklist") {
         query += ` AND (status IS NULL OR status <> 'yes')`;
       }
     }
     else if (taskView === "upcoming") {
-      // TOMORROW TASKS within current month
+      // TOMORROW TASKS - Use the exact query that works in DB
       query += `
-        AND task_start_date >= CURRENT_DATE + INTERVAL '1 day'
-        AND task_start_date < CURRENT_DATE + INTERVAL '2 day'
+        AND task_start_date::date = (CURRENT_DATE + INTERVAL '1 day')::date
       `;
+      
+      // For checklist: exclude completed tasks
+      if (dashboardType === "checklist") {
+        query += ` AND (status IS NULL OR status <> 'yes')`;
+      }
     }
     else if (taskView === "overdue") {
-      // PAST DUE + NOT COMPLETED within current month
+      // PAST DUE + NOT COMPLETED
       query += `
-        AND task_start_date < CURRENT_DATE
+        AND task_start_date::date < CURRENT_DATE
       `;
 
       if (dashboardType === "checklist") {
@@ -104,9 +90,16 @@ export const getDashboardData = async (req, res) => {
         query += ` AND submission_date IS NULL`;
       }
     }
+    else if (taskView === "all") {
+      // ALL TASKS IN CURRENT MONTH
+      query += `
+        AND task_start_date >= '${firstDayStr} 00:00:00'
+        AND task_start_date <= '${currentDayStr} 23:59:59'
+      `;
+    }
 
     // ORDER + PAGINATION
-    query += ` ORDER BY task_start_date DESC LIMIT ${limit} OFFSET ${offset}`;
+    query += ` ORDER BY task_start_date ASC LIMIT ${limit} OFFSET ${offset}`;
 
     console.log("FINAL QUERY =>", query);
 
@@ -507,8 +500,7 @@ export const getDashboardDataCount = async (req, res) => {
     // TASK VIEW LOGIC
     if (taskView === "recent") {
       query += `
-        AND task_start_date >= CURRENT_DATE
-        AND task_start_date < CURRENT_DATE + INTERVAL '1 day'
+        AND DATE(task_start_date) = CURRENT_DATE
       `;
 
       if (dashboardType === "checklist") {
@@ -517,13 +509,12 @@ export const getDashboardDataCount = async (req, res) => {
     } 
     else if (taskView === "upcoming") {
       query += `
-        AND task_start_date >= CURRENT_DATE + INTERVAL '1 day'
-        AND task_start_date < CURRENT_DATE + INTERVAL '2 day'
+        AND DATE(task_start_date) = CURRENT_DATE + INTERVAL '1 day'
       `;
     }
     else if (taskView === "overdue") {
       query += `
-        AND task_start_date < CURRENT_DATE
+        AND DATE(task_start_date) < CURRENT_DATE
         AND submission_date IS NULL
       `;
 
@@ -534,6 +525,9 @@ export const getDashboardDataCount = async (req, res) => {
 
     const result = await pool.query(query);
     const count = Number(result.rows[0].count || 0);
+    
+    console.log("COUNT QUERY for", taskView, "=>", query);
+    console.log("COUNT RESULT:", count);
     
     res.json(count);
 
