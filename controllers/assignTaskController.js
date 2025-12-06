@@ -62,7 +62,7 @@ export const getUniqueDoerNames = async (req, res) => {
        FROM users 
        WHERE status='active'
          AND (
-              LOWER(department) = LOWER($1)
+              LOWER(user_access) = LOWER($1)
               OR role='admin'
              )
        ORDER BY user_name ASC`,
