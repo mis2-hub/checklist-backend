@@ -12,14 +12,11 @@ export const getPendingChecklist = async (req, res) => {
     const limit = 50;
     const offset = (page - 1) * limit;
 
-    // let where = `
-    //   submission_date IS NULL
-    //   AND task_start_date <= NOW()
-    // `;
-
+    // Include future tasks up to 1 year ahead (frontend will filter by frequency)
+    // This allows showing upcoming tasks based on frequency (daily: +1 day, weekly: +7 days, etc.)
     let where = `
   submission_date IS NULL
-  AND DATE(task_start_date) <= CURRENT_DATE
+  AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '365 days'
 `;
 
 
