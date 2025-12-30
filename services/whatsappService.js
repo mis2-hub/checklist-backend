@@ -117,8 +117,8 @@ export const sendTaskAssignmentNotification = async (phoneNumber, taskDetails) =
   // Determine header based on frequency
   const isOneTime = frequency && frequency.toLowerCase() === 'onetime';
   const header = isOneTime 
-    ? '🔔 *REMINDER: DELEGATION TASK*' 
-    : '🔔 *REMINDER: CHECKLIST TASK*';
+    ? '🔔 *Shri Shyam Group*\n*REMINDER: DELEGATION TASK*' 
+    : '🔔 *Shri Shyam Group*\n*REMINDER: CHECKLIST TASK*';
   
   // App link for task completion
   const appLink = 'https://checklist-frontend-eight.vercel.app';
