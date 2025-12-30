@@ -1,6 +1,7 @@
 import pool from "../config/db.js";
 
 import upload, { uploadToS3 } from "../middleware/s3Upload.js";
+import { sendWhatsAppMessage } from "../services/whatsappService.js";
 // -----------------------------------------
 // 1️⃣ GET PENDING CHECKLIST
 export const getPendingChecklist = async (req, res) => {
@@ -8,6 +9,7 @@ export const getPendingChecklist = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const username = req.query.username;
     const role = req.query.role;
+    const search = req.query.search || '';
 
     const limit = 50;
     const offset = (page - 1) * limit;
@@ -23,6 +25,18 @@ export const getPendingChecklist = async (req, res) => {
     // ⭐ If user is NOT admin → filter by name
     if (role !== "admin" && username) {
       where += ` AND LOWER(name) = LOWER('${username}') `;
+    }
+
+    // ⭐ Add search filter if search term is provided
+    if (search.trim()) {
+      const searchLower = search.toLowerCase().replace(/'/g, "''"); // Escape single quotes
+      where += ` AND (
+        LOWER(name) LIKE '%${searchLower}%' OR
+        LOWER(task_description) LIKE '%${searchLower}%' OR
+        LOWER(department) LIKE '%${searchLower}%' OR
+        LOWER(given_by) LIKE '%${searchLower}%' OR
+        CAST(task_id AS TEXT) LIKE '%${searchLower}%'
+      ) `;
     }
 
     const query = `
@@ -203,6 +217,99 @@ export const adminDoneChecklist = async (req, res) => {
 
   } catch (err) {
     console.error("❌ adminDoneChecklist Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+// -----------------------------------------
+// 5️⃣ SEND WHATSAPP NOTIFICATION (Admin Only)
+// -----------------------------------------
+export const sendWhatsAppNotification = async (req, res) => {
+  try {
+    const { items } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "No items provided" });
+    }
+
+    const results = [];
+
+    for (const item of items) {
+      const doerName = item.name;
+      
+      // Look up doer's phone number from users table
+      const userResult = await pool.query(
+        'SELECT number FROM users WHERE user_name = $1',
+        [doerName]
+      );
+
+      if (userResult.rows.length === 0 || !userResult.rows[0].number) {
+        results.push({
+          name: doerName,
+          success: false,
+          error: 'Phone number not found'
+        });
+        continue;
+      }
+
+      const phoneNumber = userResult.rows[0].number;
+
+      // Format date for message
+      const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        try {
+          const date = new Date(dateStr);
+          if (isNaN(date.getTime())) return dateStr;
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          const hours = String(date.getHours()).padStart(2, '0');
+          const minutes = String(date.getMinutes()).padStart(2, '0');
+          const seconds = String(date.getSeconds()).padStart(2, '0');
+          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        } catch (e) {
+          return dateStr;
+        }
+      };
+
+      // App link
+      const appLink = 'https://checklist-frontend-eight.vercel.app';
+
+      // Create urgent task alert message
+      const message = `🚨 URGENT TASK ALERT 🚨
+
+Name: ${doerName}
+Task ID: ${item.task_id || 'N/A'}
+Task: ${item.task_description || 'N/A'}
+Planned Date: ${formatDate(item.task_start_date)}
+Given By: ${item.given_by || 'N/A'}
+
+📌 Please take immediate action and update once completed.
+
+🔗 *App Link:*
+${appLink}`;
+
+      // Send WhatsApp message
+      const result = await sendWhatsAppMessage(phoneNumber, message);
+
+      results.push({
+        name: doerName,
+        success: result.success,
+        error: result.error || null
+      });
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    res.json({
+      message: `WhatsApp sent: ${successCount} success, ${failCount} failed`,
+      results
+    });
+
+  } catch (err) {
+    console.error("❌ sendWhatsAppNotification Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
