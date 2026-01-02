@@ -196,18 +196,15 @@ export const updateChecklistTask = async (updatedTask, originalTask) => {
 export const fetchUsers = async () => {
   try {
     const sql = `
-      SELECT name
-      FROM (
-        SELECT DISTINCT name FROM checklist WHERE name IS NOT NULL AND name <> ''
-        UNION
-        SELECT DISTINCT name FROM delegation WHERE name IS NOT NULL AND name <> ''
-      ) t
-      ORDER BY LOWER(name)
+      SELECT DISTINCT user_name
+      FROM users
+      WHERE user_name IS NOT NULL AND user_name <> ''
+      ORDER BY LOWER(user_name)
     `;
 
     const { rows } = await pool.query(sql);
-    // Normalize shape similar to existing frontend expectation (user_name)
-    return rows.map((r) => ({ user_name: r.name }));
+    // Return objects with user_name as expected by frontend
+    return rows.map((r) => ({ user_name: r.user_name }));
   } catch (err) {
     console.log(err);
     return [];

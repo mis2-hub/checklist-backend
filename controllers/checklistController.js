@@ -64,6 +64,49 @@ export const getPendingChecklist = async (req, res) => {
 };
 
 
+// -----------------------------------------
+// 1.1️⃣ DELETE CHECKLIST RANGE (For Leave)
+// -----------------------------------------
+export const deleteChecklistInRange = async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { username, startDate, endDate } = req.body;
+
+    if (!username || !startDate || !endDate) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    await client.query("BEGIN");
+
+    // Delete tasks for this user within the date range
+    // We match by name (case insensitive) and check if task_start_date falls within range
+    const deleteQuery = `
+      DELETE FROM checklist
+      WHERE LOWER(name) = LOWER($1)
+      AND task_start_date >= $2
+      AND task_start_date <= $3
+      RETURNING *
+    `;
+
+    const { rows } = await client.query(deleteQuery, [username, startDate, endDate]);
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: `Deleted ${rows.length} tasks for ${username}`,
+      deletedCount: rows.length
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error deleting checklist range:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  } finally {
+    client.release();
+  }
+};
+
+
 
 
 // -----------------------------------------

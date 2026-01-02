@@ -5,8 +5,8 @@ export const syncDeviceLogs = async (req, res) => {
   try {
     const today = new Date().toISOString().split("T")[0];
 
-    const IN_API_URL = `http://139.167.179.193:90/api/v2/WebAPI/GetDeviceLogs?APIKey=205511032522&SerialNumber=E03C1CB34D83AA02&FromDate=${today}&ToDate=${today}`;
-    const OUT_API_URL = `http://139.167.179.193:90/api/v2/WebAPI/GetDeviceLogs?APIKey=205511032522&SerialNumber=E03C1CB36042AA02&FromDate=${today}&ToDate=${today}`;
+    const IN_API_URL = `http://api/v2/WebAPI/GetDeviceLogs?APIKey=&SerialNumber=E03C1CB34D83AA02&FromDate=${today}&ToDate=${today}`;
+    const OUT_API_URL = `http://api/v2/WebAPI/GetDeviceLogs?APIKey=&SerialNumber=E03C1CB36042AA02&FromDate=${today}&ToDate=${today}`;
 
     // ✔ SAFE axios requests (never throws error)
     const [inRes, outRes] = await Promise.all([
