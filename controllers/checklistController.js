@@ -23,7 +23,7 @@ export const getPendingChecklist = async (req, res) => {
 
 
     // ⭐ If user is NOT admin → filter by name
-    if (role !== "admin" && username) {
+    if (role !== "admin" && role !== "super_admin" && username) {
       where += ` AND LOWER(name) = LOWER('${username}') `;
     }
 
@@ -124,7 +124,7 @@ export const getChecklistHistory = async (req, res) => {
     let where = `submission_date IS NOT NULL`;
 
     // ⭐ Normal users see only their own tasks
-    if (role !== "admin" && username) {
+    if (role !== "admin" && role !== "super_admin" && username) {
       where += ` AND LOWER(name) = LOWER('${username}') `;
     }
 
@@ -240,27 +240,37 @@ export const updateChecklist = async (req, res) => {
 // 4️⃣ ADMIN DONE UPDATE
 // -----------------------------------------
 export const adminDoneChecklist = async (req, res) => {
+  const client = await pool.connect();
   try {
     const items = req.body;
 
     if (!items || items.length === 0)
       return res.status(400).json({ error: "No items provided" });
 
+    await client.query("BEGIN");
+
     const sql = `
       UPDATE checklist
-      SET admin_done = 'Done'
-      WHERE task_id = ANY($1::bigint[])
+      SET admin_done = 'Done',
+          admin_done_remarks = $2
+      WHERE task_id = $1
     `;
 
-    const ids = items.map(i => i.task_id);
+    for (const item of items) {
+      // item must have task_id, optional remarks
+      await client.query(sql, [item.task_id, item.remarks || null]);
+    }
 
-    await pool.query(sql, [ids]);
+    await client.query("COMMIT");
 
     res.json({ message: "Admin updated successfully" });
 
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("❌ adminDoneChecklist Error:", err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 

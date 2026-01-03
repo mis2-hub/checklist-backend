@@ -19,7 +19,7 @@ export const getCalendarTasks = async (req, res) => {
 
     // Build name filter for non-admin users
     let nameFilter = "";
-    if (role !== "admin" && username) {
+    if (role !== "admin" && role !== "super_admin" && username) {
       nameFilter = ` AND LOWER(name) = LOWER('${username}')`;
     }
 

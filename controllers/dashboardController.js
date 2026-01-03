@@ -46,7 +46,7 @@ export const getDashboardData = async (req, res) => {
     // ---------------------------
     // ADMIN STAFF FILTER
     // ---------------------------
-    if (role === "admin" && staffFilter !== "all") {
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") {
       query += ` AND LOWER(name) = LOWER('${staffFilter}')`;
     }
 
@@ -141,7 +141,7 @@ export const getTotalTask = async (req, res) => {
     }
 
     // STAFF FILTER (admin only)
-    if (role === "admin" && staffFilter !== "all") {
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") {
       query += ` AND LOWER(name)=LOWER('${staffFilter}')`;
     }
 
@@ -181,7 +181,7 @@ export const getCompletedTask = async (req, res) => {
     }
 
     if (role === "user" && username) query += ` AND LOWER(name)=LOWER('${username}')`;
-    if (role === "admin" && staffFilter !== "all") query += ` AND LOWER(name)=LOWER('${staffFilter}')`;
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") query += ` AND LOWER(name)=LOWER('${staffFilter}')`;
     if (dashboardType === "checklist" && departmentFilter !== "all")
       query += ` AND LOWER(department)=LOWER('${departmentFilter}')`;
 
@@ -245,7 +245,7 @@ export const getPendingTask = async (req, res) => {
     if (role === "user" && username)
       query += ` AND LOWER(name)=LOWER('${username}')`;
 
-    if (role === "admin" && staffFilter !== "all")
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all")
       query += ` AND LOWER(name)=LOWER('${staffFilter}')`;
 
     // Department filter
@@ -283,7 +283,7 @@ export const getNotDoneTask = async (req, res) => {
       query += ` AND name = '${username}'`;
     }
 
-    if (role === "admin" && staffFilter !== "all") {
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") {
       query += ` AND name = '${staffFilter}'`;
     }
 
@@ -322,7 +322,7 @@ export const getOverdueTask = async (req, res) => {
       params.push(username);
     }
 
-    if (role === "admin" && staffFilter !== "all") {
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") {
       query += ` AND LOWER(name)=LOWER($${idx++})`;
       params.push(staffFilter);
     }
@@ -362,20 +362,27 @@ export const getStaffByDepartment = async (req, res) => {
   try {
     const { department } = req.query;
 
-    let query = `SELECT user_name, user_access FROM users`;
+    let query = `SELECT user_name, user_access, department FROM users WHERE user_name IS NOT NULL`;
 
     const result = await pool.query(query);
 
     let staff = result.rows;
 
     if (department && department !== "all") {
-      staff = staff.filter(u =>
-        u.user_access &&
-        u.user_access.toLowerCase().includes(department.toLowerCase())
-      );
+      staff = staff.filter(u => {
+        // Match if user's primary department matches
+        const deptMatch = u.department && u.department.toLowerCase() === department.toLowerCase();
+        
+        // Match if user has access to the department
+        const accessMatch = u.user_access && u.user_access.toLowerCase().includes(department.toLowerCase());
+        
+        return deptMatch || accessMatch;
+      });
     }
 
-    res.json(staff.map(s => s.user_name));
+    // Return unique non-null names
+    const uniqueNames = [...new Set(staff.map(s => s.user_name).filter(Boolean))];
+    res.json(uniqueNames);
   } catch (err) {
     console.error("STAFF BY DEPARTMENT ERROR:", err.message);
     res.status(500).json({ error: "Error fetching staff by department" });
@@ -566,7 +573,7 @@ export const getDashboardDataCount = async (req, res) => {
     }
 
     // ADMIN STAFF FILTER
-    if (role === "admin" && staffFilter !== "all") {
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") {
       query += ` AND LOWER(name) = LOWER('${staffFilter}')`;
     }
 
@@ -662,7 +669,7 @@ export const getChecklistDateRangeCount = async (req, res) => {
     }
 
     // ADMIN STAFF FILTER
-    if (role === "admin" && staffFilter !== "all") {
+    if ((role === "admin" || role === "super_admin") && staffFilter !== "all") {
       query += ` AND LOWER(name) = LOWER($${idx++})`;
       params.push(staffFilter);
     }

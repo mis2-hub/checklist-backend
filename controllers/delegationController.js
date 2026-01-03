@@ -30,7 +30,7 @@ export const fetchDelegationDataSortByDate = async (req, res) => {
     }
 
     // ADMIN: fetch ALL pending tasks (ignore user_access)
-    else if (role === "admin") {
+    else if (role === "admin" || role === "super_admin") {
       query = `
         SELECT *
         FROM delegation
@@ -89,7 +89,7 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
     }
 
     // ADMIN FILTER — ONLY IF YOU ADD department COLUMN IN delegation_done
-    if (role === "admin" && userAccess) {
+    if ((role === "admin" || role === "super_admin") && userAccess) {
       const depts = userAccess
         .replace(/\+/g, " ")
         .split(",")
@@ -370,27 +370,37 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
    ADMIN DONE - Mark delegation as admin approved
 ------------------------------------------------------ */
 export const adminDoneDelegation = async (req, res) => {
+  const client = await pool.connect();
   try {
     const items = req.body;
 
     if (!items || items.length === 0)
       return res.status(400).json({ error: "No items provided" });
 
+    await client.query("BEGIN");
+
     const sql = `
       UPDATE delegation_done
-      SET admin_done = 'Done'
-      WHERE id = ANY($1::bigint[])
+      SET admin_done = 'Done',
+          admin_done_remarks = $2
+      WHERE id = $1
     `;
 
-    const ids = items.map(i => i.id);
+    for (const item of items) {
+      // item must have id, optional remarks
+      await client.query(sql, [item.id, item.remarks || null]);
+    }
 
-    await pool.query(sql, [ids]);
+    await client.query("COMMIT");
 
     res.json({ message: "Delegation admin approval updated successfully" });
 
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("❌ adminDoneDelegation Error:", err);
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 

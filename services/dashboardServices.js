@@ -47,7 +47,7 @@ export const fetchDashboardDataService = async ({
     }
 
     // Staff filter (admin)
-    if (staffFilter && staffFilter !== "all" && role === "admin") {
+    if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -143,7 +143,7 @@ export const countTotalTaskService = async ({
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(username);
       i++;
-    } else if (staffFilter && staffFilter !== "all") {
+    } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -196,7 +196,7 @@ export const countCompleteTaskService = async ({
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(username);
       i++;
-    } else if (staffFilter && staffFilter !== "all") {
+    } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -249,7 +249,7 @@ export const countPendingOrDelayTaskService = async ({
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(username);
       i++;
-    } else if (staffFilter && staffFilter !== "all") {
+    } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -302,7 +302,7 @@ export const countOverDueORExtendedTaskService = async ({
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(username);
       i++;
-    } else if (staffFilter && staffFilter !== "all") {
+    } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -370,7 +370,7 @@ export const fetchStaffTasksDataService = async ({
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(username);
       i++;
-    } else if (staffFilter && staffFilter !== "all" && role === "admin") {
+    } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -455,7 +455,7 @@ export const getStaffTasksCountService = async ({
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(username);
       i++;
-    } else if (staffFilter && staffFilter !== "all" && role === "admin") {
+    } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -607,7 +607,7 @@ export const fetchChecklistDateRangeService = async ({
       i++;
     }
 
-    if (staffFilter && staffFilter !== "all" && role === "admin") {
+    if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -696,7 +696,7 @@ export const getChecklistDateRangeCountService = async ({
       i++;
     }
 
-    if (staffFilter && staffFilter !== "all" && role === "admin") {
+    if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;
@@ -774,7 +774,7 @@ export const fetchChecklistDateRangeStatsService = async ({
       i++;
     }
 
-    if (staffFilter && staffFilter !== "all" && role === "admin") {
+    if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
       conditions.push(`LOWER(name) = LOWER($${i})`);
       params.push(staffFilter);
       i++;

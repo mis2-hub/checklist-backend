@@ -15,7 +15,7 @@ export const getUniqueDepartments = async (req, res) => {
     if (user.rows.length === 0)
       return res.status(404).json({ message: "User not found" });
 
-    if (user.rows[0].role === "admin") {
+    if (user.rows[0].role === "admin" || user.rows[0].role === "super_admin") {
       const result = await pool.query(`
         SELECT DISTINCT department
         FROM users
@@ -65,6 +65,7 @@ export const getUniqueDoerNames = async (req, res) => {
          AND (
               LOWER(user_access) = LOWER($1)
               OR role='admin'
+              OR role='super_admin'
              )
        ORDER BY user_name ASC`,
       [department]

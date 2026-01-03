@@ -199,7 +199,7 @@ export const fetchUsers = async () => {
       SELECT DISTINCT user_name
       FROM users
       WHERE user_name IS NOT NULL AND user_name <> ''
-      ORDER BY LOWER(user_name)
+      ORDER BY user_name
     `;
 
     const { rows } = await pool.query(sql);
