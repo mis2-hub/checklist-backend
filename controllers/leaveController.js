@@ -162,32 +162,37 @@ const assignIndividualTasks = async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Insert each task into delegation table with individual doer
-    const insertPromises = assignments.map(task => {
-      const insertQuery = `
-        INSERT INTO delegation (
-          task_id, task_description, given_by, name, 
-          created_at, status, department, frequency,
-          task_start_date, planned_date
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `;
-      return client.query(insertQuery, [
-        task.task_id,
-        task.task_description,
-        task.username, // The original doer (user on leave)
-        task.delegateTo, // The new doer assigned to this specific task
-        task.task_start_date, // Use task start date as created_at
-        'pending',
-        task.department || '',
-        task.frequency || '',
-        task.task_start_date,
-        task.planned_date
-      ]);
-    });
+    // Filter assignments that have a delegateTo user (only these go to delegation table)
+    const delegationAssignments = assignments.filter(task => task.delegateTo && task.delegateTo.trim() !== '');
 
-    await Promise.all(insertPromises);
+    // Insert only delegated tasks into delegation table
+    if (delegationAssignments.length > 0) {
+      const insertPromises = delegationAssignments.map(task => {
+        const insertQuery = `
+          INSERT INTO delegation (
+            task_id, task_description, given_by, name, 
+            created_at, status, department, frequency,
+            task_start_date, planned_date
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `;
+        return client.query(insertQuery, [
+          task.task_id,
+          task.task_description,
+          task.username, // The original doer (user on leave)
+          task.delegateTo, // The new doer assigned to this specific task
+          task.task_start_date, // Use task start date as created_at
+          'pending',
+          task.department || '',
+          task.frequency || '',
+          task.task_start_date,
+          task.planned_date
+        ]);
+      });
 
-    // Delete original checklist tasks using task_ids
+      await Promise.all(insertPromises);
+    }
+
+    // Delete ALL submitted checklist tasks using task_ids (both delegated and delete-only)
     const taskIds = assignments.map(t => t.task_id);
     const deleteQuery = `
       DELETE FROM checklist
@@ -197,10 +202,18 @@ const assignIndividualTasks = async (req, res) => {
 
     await client.query('COMMIT');
 
+    const delegatedCount = delegationAssignments.length;
+    const deletedCount = assignments.length - delegatedCount;
+    
+    let message = `Successfully processed ${assignments.length} tasks.`;
+    if (delegatedCount > 0) message += ` ${delegatedCount} transferred.`;
+    if (deletedCount > 0) message += ` ${deletedCount} deleted.`;
+
     res.status(200).json({
       success: true,
-      tasksTransferred: assignments.length,
-      message: `Successfully transferred ${assignments.length} tasks with individual assignments`
+      tasksTransferred: delegatedCount,
+      tasksDeleted: deletedCount,
+      message: message
     });
 
   } catch (error) {
