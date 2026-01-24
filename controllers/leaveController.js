@@ -229,4 +229,62 @@ const assignIndividualTasks = async (req, res) => {
   }
 };
 
-export { transferTasks, getUserTasks, assignIndividualTasks };
+// Extend task start date
+const extendTask = async (req, res) => {
+  const { taskId, newStartDate } = req.body;
+
+  if (!taskId || !newStartDate) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required fields: taskId, newStartDate"
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Update the task start date (and planned_date) but KEEP the original time
+    // We cast the new date string to a DATE, and add the existing TIME component from the record
+    const updateQuery = `
+      UPDATE checklist
+      SET task_start_date = ($1::date + task_start_date::timestamp::time),
+          planned_date = ($1::date + planned_date::timestamp::time)
+      WHERE task_id = $2
+      RETURNING *
+    `;
+    
+    // Pass strictly the YYYY-MM-DD string, not a timestamp string
+    const result = await client.query(updateQuery, [newStartDate, taskId]);
+
+    if (result.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        message: "Task not found"
+      });
+    }
+
+    await client.query('COMMIT');
+
+    res.status(200).json({
+      success: true,
+      message: "Task extended successfully",
+      task: result.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("Error extending task:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error extending task",
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+};
+
+export { transferTasks, getUserTasks, assignIndividualTasks, extendTask };
