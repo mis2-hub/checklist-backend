@@ -146,31 +146,49 @@ Shri Shyam Group.`;
 };
 
 /**
- * Send delegation task extension notification to specific admin number
- * @param {object} taskDetails - Details of the extended task
+ * Send delegation task status update notification to specific admin number
+ * @param {object} taskDetails - Details of the task being updated
+ * @param {string} updateType - Type of update ('done', 'partial_done', 'extend')
  */
-export const sendDelegationExtensionNotification = async (taskDetails) => {
+export const sendDelegationStatusUpdateNotification = async (taskDetails, updateType) => {
   const { name, task_id, task_description, next_extend_date, reason } = taskDetails;
   
   const adminNumber = '9637655555';
   
-  const message = `📋 *DELEGATION TASK EXTENDED*
+  console.log(`[WhatsApp] Update Type: ${updateType}, Task ID: ${task_id}, Admin Number: ${adminNumber}`);
+  console.log(`[WhatsApp] Name: ${name}, Next Extend Date: ${next_extend_date}`);
+  
+  let statusHeader = '📋 *DELEGATION TASK UPDATE*';
+  let statusText = 'Updated';
+
+  if (updateType === 'done') {
+    statusHeader = '✅ *DELEGATION TASK COMPLETED*';
+    statusText = 'Completed';
+  } else if (updateType === 'partial_done') {
+    statusHeader = '🟡 *DELEGATION TASK PARTIALLY DONE*';
+    statusText = 'Partially Done';
+  } else if (updateType === 'extend') {
+    statusHeader = '📋 *DELEGATION TASK EXTENDED*';
+    statusText = 'Extended';
+  }
+
+  const message = `${statusHeader}
 
 Name: ${name || 'N/A'}
 Task ID: ${task_id || 'N/A'}
 Description: ${task_description || 'N/A'}
-Extend Date: ${formatDate(next_extend_date)}
-Remarks: ${reason || 'N/A'}
+${updateType === 'extend' ? `Extend Date: ${formatDate(next_extend_date)}\n` : ''}Remarks: ${reason || 'N/A'}
 
-📌 *Status:* This is an extended delegation task.`;
-
-  console.log(`📡 Preparing extension notification for ${adminNumber}`);
-  console.log(`💬 Message: ${message}`);
+📌 *Status:* Task marked as ${statusText}.`;
 
   const result = await sendWhatsAppMessage(adminNumber, message);
-  console.log(`📊 Notification result for ${adminNumber}:`, result);
+  console.log(`[WhatsApp] Result for ${adminNumber}:`, JSON.stringify(result));
   return result;
 };
 
-export default { sendWhatsAppMessage, sendTaskAssignmentNotification, sendDelegationExtensionNotification };
+export default { 
+  sendWhatsAppMessage, 
+  sendTaskAssignmentNotification, 
+  sendDelegationStatusUpdateNotification 
+};
 

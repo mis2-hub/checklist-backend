@@ -1,6 +1,6 @@
 import pool from "../config/db.js";
 import { uploadToS3 } from "../middleware/s3Upload.js";
-import { sendWhatsAppMessage, sendDelegationExtensionNotification } from "../services/whatsappService.js";
+import { sendWhatsAppMessage, sendDelegationStatusUpdateNotification } from "../services/whatsappService.js";
 
 
 /* ------------------------------------------------------
@@ -73,18 +73,20 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
 
   try {
     let query = `
-      SELECT *
-      FROM delegation_done
-      ORDER BY created_at DESC;
+      SELECT dd.*, d.planned_date, d.submission_date
+      FROM delegation_done dd
+      LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
+      ORDER BY dd.created_at DESC;
     `;
 
     // USER LEVEL FILTER
     if (role === "user") {
       query = `
-        SELECT *
-        FROM delegation_done
-        WHERE name = '${username}'
-        ORDER BY created_at DESC;
+        SELECT dd.*, d.planned_date, d.submission_date
+        FROM delegation_done dd
+        LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
+        WHERE dd.name = '${username}'
+        ORDER BY dd.created_at DESC;
       `;
     }
 
@@ -97,7 +99,7 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
         .join(",");
 
       query = `
-        SELECT dd.*
+        SELECT dd.*, d.planned_date, d.submission_date
         FROM delegation_done dd
         LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
         WHERE LOWER(d.department) IN (${depts})
@@ -228,6 +230,8 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
       const statusForDone =
         task.status === "done"
           ? "completed"
+          : task.status === "partial_done"
+          ? "completed"
           : task.status === "extend"
           ? "extend"
           : "in_progress";
@@ -235,6 +239,8 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
       const statusForDelegation =
         task.status === "done"
           ? "done"
+          : task.status === "partial_done"
+          ? "partial_done"
           : task.status === "extend"
           ? "extend"
           : null;
@@ -348,15 +354,20 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
         updated_in_main_table: updated.rows[0],
       });
 
-      // Special Notification for Extension (only if remarks are filled)
-      if (task.status === "extend" && task.reason && task.reason.trim() !== "") {
+      // 📲 WhatsApp Notification for Admin (9637655555) for Done, Partial Done, and Extend
+      const lowerStatus = (task.status || "").toString().toLowerCase().trim();
+      console.log(`🔍 Checking notification for Task ID ${task.task_id}: Detected status "${lowerStatus}"`);
+
+      if (lowerStatus === "done" || lowerStatus === "partial_done" || lowerStatus === "extend") {
         try {
-          console.log(`📲 Sending WhatsApp extension notification for Task ID: ${task.task_id}`);
-          await sendDelegationExtensionNotification(task);
+          console.log(`📲 Sending WhatsApp status notification (${lowerStatus}) to Admin for Task ID: ${task.task_id}`);
+          await sendDelegationStatusUpdateNotification(task, lowerStatus);
         } catch (notifErr) {
           console.error("❌ Notification error:", notifErr);
           // Don't fail the whole transaction if notification fails
         }
+      } else {
+        console.log(`ℹ️ No notification triggered for status: "${lowerStatus}"`);
       }
     }
 
