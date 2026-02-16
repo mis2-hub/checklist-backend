@@ -665,3 +665,40 @@ export const updateAdminRemarks = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+/* ------------------------------------------------------
+   UPDATE USER REMARKS - For user to update their own remarks
+------------------------------------------------------ */
+export const updateUserRemarks = async (req, res) => {
+  try {
+    const { task_id } = req.params;
+    const { remarks } = req.body;
+
+    if (!task_id) {
+      return res.status(400).json({ error: "task_id is required" });
+    }
+
+    const updateQuery = `
+      UPDATE delegation
+      SET remarks = $1,
+          updated_at = NOW() AT TIME ZONE 'Asia/Kolkata'
+      WHERE task_id = $2
+      RETURNING task_id, remarks, to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at;
+    `;
+
+    const result = await pool.query(updateQuery, [remarks || null, task_id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    res.json({
+      message: "User remarks updated successfully",
+      data: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error("❌ updateUserRemarks Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
