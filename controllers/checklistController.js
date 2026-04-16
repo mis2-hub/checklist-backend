@@ -1,7 +1,7 @@
 import pool from "../config/db.js";
 
 import upload, { uploadToS3 } from "../middleware/s3Upload.js";
-import { sendWhatsAppMessage } from "../services/whatsappService.js";
+import { sendWhatsAppMessage, sendUrgentAlertNotification } from "../services/whatsappService.js";
 // -----------------------------------------
 // 1️⃣ GET PENDING CHECKLIST
 export const getPendingChecklist = async (req, res) => {
@@ -354,25 +354,15 @@ export const sendWhatsAppNotification = async (req, res) => {
         }
       };
 
-      // App link
-      const appLink = "https://checklist-frontend-eight.vercel.app";
-
-      // Create urgent task alert message
-      const message = `🚨 URGENT TASK ALERT 🚨
-
-Name: ${doerName}
-Task ID: ${item.task_id || "N/A"}
-Task: ${item.task_description || "N/A"}s
-Planned Date: ${formatDate(item.task_start_date)}
-Given By: ${item.given_by || "N/A"}
-
-📌 Please take immediate action and update once completed.
-
-🔗 *App Link:*
-${appLink}`;
-
-      // Send WhatsApp message
-      const result = await sendWhatsAppMessage(phoneNumber, message);
+      // Send WhatsApp message via Template
+      const result = await sendUrgentAlertNotification(phoneNumber, {
+        name: doerName,
+        taskId: item.task_id || "N/A",
+        description: item.task_description || "N/A",
+        plannedDate: item.task_start_date,
+        givenBy: item.given_by || "N/A",
+        imageUrl: item.image
+      });
 
       results.push({
         name: doerName,

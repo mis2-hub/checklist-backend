@@ -209,7 +209,9 @@ export const postAssignTasks = async (req, res) => {
           givenBy: tasks[0].givenBy,
           description: tasks[0].description,
           dueDate: tasks[0].dueDate || tasks[0].taskStartDate || tasks[0].startDate,
-          frequency: tasks[0].frequency
+          frequency: tasks[0].frequency,
+          imageUrl: imageUrl,
+          taskType: tasks[0].frequency === 'one-time' ? 'Delegation' : 'Checklist'
         }).then(result => {
           if (result.success) {
             console.log(`✅ WhatsApp notification sent to ${doerName}`);

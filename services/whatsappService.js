@@ -3,10 +3,16 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const MAYTAPI_BASE_URL = 'https://api.maytapi.com/api';
-const PRODUCT_ID = process.env.MAYTAPI_PRODUCT_ID;
-const PHONE_ID = process.env.MAYTAPI_PHONE_ID;
-const API_TOKEN = process.env.MAYTAPI_API_TOKEN;
+const META_ACCESS_TOKEN = process.env.ACCESS_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const WABA_ID = process.env.WABA_ID;
+const META_API_URL = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
+
+// Template Names from .env
+const TEMPLATE_ASSIGN = process.env.TASK_ASSIGN_REMINDER; // task_assignment_reminder
+const TEMPLATE_COMPLETE = process.env.DELEGATION_TASK_COMPLETE; // delegation_task_complete
+const TEMPLATE_EXTEND = process.env.DELEGATION_TASK_EXTENDED; // delegation_task_extended
+const TEMPLATE_URGENT = process.env.URGENT_TASK_ALERT; // urgent_task_alert
 
 /**
  * Format phone number for WhatsApp
@@ -15,8 +21,8 @@ const API_TOKEN = process.env.MAYTAPI_API_TOKEN;
 const formatPhoneNumber = (phoneNumber) => {
   if (!phoneNumber) return null;
   
-  // Convert to string and remove any spaces, dashes, or parentheses
-  let phone = String(phoneNumber).replace(/[\s\-\(\)]/g, '');
+  // Convert to string and remove any spaces, dashes, parentheses or plus signs
+  let phone = String(phoneNumber).replace(/[\s\-\(\)\+]/g, '');
   
   // If number starts with 0, replace with 91 (India)
   if (phone.startsWith('0')) {
@@ -33,7 +39,6 @@ const formatPhoneNumber = (phoneNumber) => {
 
 /**
  * Format date to readable format (YYYY-MM-DD HH:mm:ss)
- * Converts ISO format like "2025-12-30T09:00:00" to "2025-12-30 09:00:00"
  */
 const formatDate = (dateStr) => {
   if (!dateStr) return 'N/A';
@@ -55,145 +60,260 @@ const formatDate = (dateStr) => {
   }
 };
 
+// Default Logo URL (Fixed 403 Forbidden issue)
+const DEFAULT_IMAGE_URL = 'https://drive.google.com/uc?export=download&id=1gb2U7C8DpdVXIJuyd75cYth8YIATg5sM'; // Direct image download link required by Meta API
+
 /**
- * Send WhatsApp message via Maytapi API
- * @param {string|number} phoneNumber - Recipient phone number
- * @param {string} message - Message text to send
- * @returns {Promise<object>} - API response
+ * Internal helper to send message via Meta Cloud API
  */
-export const sendWhatsAppMessage = async (phoneNumber, message) => {
+const sendMetaWhatsApp = async (payload) => {
   try {
-    // Validate configuration
-    if (!PRODUCT_ID || !PHONE_ID || !API_TOKEN) {
-      console.error('❌ Maytapi configuration missing in .env');
+    if (!META_ACCESS_TOKEN || !PHONE_NUMBER_ID) {
+      console.error('❌ Meta WhatsApp configuration missing in .env');
       return { success: false, error: 'Configuration missing' };
     }
 
-    // Format phone number
-    const formattedPhone = formatPhoneNumber(phoneNumber);
-    
-    if (!formattedPhone) {
-      console.error('❌ Invalid phone number provided');
-      return { success: false, error: 'Invalid phone number' };
-    }
+    console.log('📤 Sending Meta Payload:', JSON.stringify(payload, null, 2));
 
-    console.log(`📱 Sending WhatsApp to: ${formattedPhone}`);
+    const response = await axios.post(
+      META_API_URL,
+      payload,
+      {
+        headers: {
+          'Authorization': `Bearer ${META_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      }
+    );
 
-   const response = await axios.post(
-  `${MAYTAPI_BASE_URL}/${PRODUCT_ID}/${PHONE_ID}/sendMessage`,
-  {
-    to_number: formattedPhone,
-    type: "text",
-    message: message,
-    preview_url: true      // 👈 THIS MAKES LINKS CLICKABLE
-  },
-  {
-    headers: {
-      "x-maytapi-key": API_TOKEN,
-      "Content-Type": "application/json"
-    },
-    timeout: 10000
-  }
-);
-
-
-    console.log('✅ WhatsApp message sent successfully');
+    console.log('✅ Meta WhatsApp API Response:', JSON.stringify(response.data, null, 2));
     return { success: true, data: response.data };
 
   } catch (error) {
-    console.error('❌ WhatsApp send error:', error.response?.data || error.message);
-    return { success: false, error: error.message };
+    const errorData = error.response?.data || error.message;
+    console.error('❌ Meta WhatsApp send error:', JSON.stringify(errorData, null, 2));
+    return { success: false, error: errorData };
   }
 };
 
 /**
- * Send task assignment notification via WhatsApp
- * @param {string|number} phoneNumber - Recipient phone number
- * @param {object} taskDetails - Task details object
+ * Send raw text message (Only works if user messaged first within 24h)
+ * @param {string|number} phoneNumber 
+ * @param {string} message 
+ */
+export const sendWhatsAppMessage = async (phoneNumber, message) => {
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+
+  console.log(`📱 Sending Text via Meta to: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: formattedPhone,
+    type: "text",
+    text: {
+      preview_url: true,
+      body: message
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+};
+
+/**
+ * Send task assignment notification via Meta Template
  */
 export const sendTaskAssignmentNotification = async (phoneNumber, taskDetails) => {
-  const { doerName, taskId, givenBy, description, dueDate, frequency } = taskDetails;
-  
-  // Determine header based on frequency
-  const isOneTime = frequency && frequency.toLowerCase() === 'onetime';
-  const header = isOneTime 
-    ? '🔔 REMINDER: DELEGATION TASK*' 
-    : '🔔 REMINDER: CHECKLIST TASK*';
-  
-  // App link for task completion
-  const appLink = 'https://checklist-frontend-eight.vercel.app';
-  
-  const message = `${header}
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
 
-Dear ${doerName || 'Team Member'},
+  const { doerName, taskId, givenBy, description, dueDate, imageUrl, taskType } = taskDetails;
 
-You have been assigned a new task. Please find the details below:
+  console.log(`📱 Sending Task Assignment Template via Meta to: ${formattedPhone}`);
 
-📌 Task ID: ${taskId || 'N/A'}
-🧑‍💼 Allocated By: ${givenBy || 'N/A'}
-📝 Task Description: ${description || 'N/A'}
-⏳ Deadline: ${formatDate(dueDate)}
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_ASSIGN,
+      language: { code: "en" },
+      components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: imageUrl || DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: doerName || 'Team Member' },
+            { type: "text", text: taskId || 'N/A' },
+            { type: "text", text: givenBy || 'N/A' },
+            { type: "text", text: description || 'N/A' },
+            { type: "text", text: formatDate(dueDate) },
+            { type: "text", text: taskType || 'Task' }
+          ]
+        }
+      ]
+    }
+  };
 
-Closure Link:
-${appLink}
-
-Please make sure the task is completed before the deadline. For any assistance, feel free to reach out.
-
-Best regards,
-Shri Shyam Group.`;
-
-  return await sendWhatsAppMessage(phoneNumber, message);
+  return await sendMetaWhatsApp(payload);
 };
 
 /**
- * Send delegation task status update notification to specific admin number
- * @param {object} taskDetails - Details of the task being updated
- * @param {string} updateType - Type of update ('done', 'partial_done', 'extend')
+ * Send Delegation Done Notification via Meta Template (to Admin)
  */
-export const sendDelegationStatusUpdateNotification = async (taskDetails, updateType) => {
-  const { name, task_id, task_description, next_extend_date, reason } = taskDetails;
-  
-  const adminNumber = '9637655555';
-  
-  console.log(`[WhatsApp] Update Type: ${updateType}, Task ID: ${task_id}, Admin Number: ${adminNumber}`);
-  console.log(`[WhatsApp] Name: ${name}, Next Extend Date: ${next_extend_date}`);
-  
-  let statusHeader = '📋 *DELEGATION TASK UPDATE*';
-  let statusText = 'Updated';
+export const sendDelegationDoneNotification = async (taskDetails, updateType) => {
+  const adminNumber = '9637655555'; 
+  const formattedPhone = formatPhoneNumber(adminNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
 
-  if (updateType === 'done') {
-    statusHeader = '✅ *DELEGATION TASK COMPLETED*';
-    statusText = 'Completed';
-  } else if (updateType === 'partial_done') {
-    statusHeader = '🟡 *DELEGATION TASK PARTIALLY DONE*';
+  const { name, task_id, task_description, reason } = taskDetails;
+  
+  let statusText = 'Completed';
+  if (updateType === 'partial_done') {
     statusText = 'Partially Done';
-  } else if (updateType === 'extend') {
-    statusHeader = '📋 *DELEGATION TASK EXTENDED*';
-    statusText = 'Extended';
   }
 
-  const appLink = 'https://checklist-frontend-eight.vercel.app';
-  
-  const message = `${statusHeader}
+  console.log(`📱 Sending Delegation Done Template (${statusText}) via Meta to Admin: ${formattedPhone}`);
 
-Name: ${name || 'N/A'}
-Task ID: ${task_id || 'N/A'}
-Description: ${task_description || 'N/A'}
-${updateType === 'extend' ? `Extend Date: ${formatDate(next_extend_date)}\n` : ''}Remarks: ${reason || 'N/A'}
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_COMPLETE,
+      language: { code: "en" },
+      components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: statusText },
+            { type: "text", text: name || 'N/A' },
+            { type: "text", text: task_id || 'N/A' },
+            { type: "text", text: task_description || 'N/A' },
+            { type: "text", text: reason || 'N/A' }
+          ]
+        }
+      ]
+    }
+  };
 
-📌 *Status:* Task marked as ${statusText}.
+  return await sendMetaWhatsApp(payload);
+};
 
-App Link:
-${appLink}`;
+/**
+ * Send Delegation Extend Notification via Meta Template (to Admin)
+ */
+export const sendDelegationExtendNotification = async (taskDetails) => {
+  const adminNumber = '9637655555'; 
+  const formattedPhone = formatPhoneNumber(adminNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
 
-  const result = await sendWhatsAppMessage(adminNumber, message);
-  console.log(`[WhatsApp] Result for ${adminNumber}:`, JSON.stringify(result));
-  return result;
+  const { name, task_id, task_description, next_extend_date, reason } = taskDetails;
+
+  console.log(`📱 Sending Delegation Extend Template via Meta to Admin: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_EXTEND,
+      language: { code: "en" },
+      components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: name || 'N/A' },
+            { type: "text", text: task_id || 'N/A' },
+            { type: "text", text: task_description || 'N/A' },
+            { type: "text", text: formatDate(next_extend_date) },
+            { type: "text", text: reason || 'N/A' }
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+};
+
+/**
+ * Send Urgent Alert Notification via Meta Template
+ */
+export const sendUrgentAlertNotification = async (phoneNumber, details) => {
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+
+  const { name, taskId, description, plannedDate, givenBy, imageUrl } = details;
+
+  console.log(`📱 Sending Urgent Alert Template via Meta to: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_URGENT,
+      language: { code: "en" },
+      components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: imageUrl || DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: name || 'N/A' },
+            { type: "text", text: taskId || 'N/A' },
+            { type: "text", text: description || 'N/A' },
+            { type: "text", text: formatDate(plannedDate) },
+            { type: "text", text: givenBy || 'N/A' }
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
 };
 
 export default { 
   sendWhatsAppMessage, 
-  sendTaskAssignmentNotification, 
-  sendDelegationStatusUpdateNotification 
+  sendTaskAssignmentNotification,
+  sendDelegationDoneNotification,
+  sendDelegationExtendNotification,
+  sendUrgentAlertNotification
 };
-

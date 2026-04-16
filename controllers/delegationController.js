@@ -1,6 +1,6 @@
 import pool from "../config/db.js";
 import { uploadToS3 } from "../middleware/s3Upload.js";
-import { sendWhatsAppMessage, sendDelegationStatusUpdateNotification } from "../services/whatsappService.js";
+import { sendWhatsAppMessage, sendDelegationDoneNotification, sendDelegationExtendNotification, sendUrgentAlertNotification } from "../services/whatsappService.js";
 
 
 /* ------------------------------------------------------
@@ -237,7 +237,7 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
 //     const results = [];
 
 //     for (const task of selectedDataArray) {
-      
+
 //       const statusForDone =
 //         task.status === "done"
 //           ? "completed"
@@ -336,19 +336,19 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
         task.status === "done"
           ? "completed"
           : task.status === "partial_done"
-          ? "completed"
-          : task.status === "extend"
-          ? "extend"
-          : "in_progress";
+            ? "completed"
+            : task.status === "extend"
+              ? "extend"
+              : "in_progress";
 
       const statusForDelegation =
         task.status === "done"
           ? "done"
           : task.status === "partial_done"
-          ? "partial_done"
-          : task.status === "extend"
-          ? "extend"
-          : null;
+            ? "partial_done"
+            : task.status === "extend"
+              ? "extend"
+              : null;
 
       /* -----------------------------------------
          2️⃣ Handle Image Uploads
@@ -469,7 +469,11 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
       if (lowerStatus === "done" || lowerStatus === "partial_done" || lowerStatus === "extend") {
         try {
           console.log(`📲 Sending WhatsApp status notification (${lowerStatus}) to Admin for Task ID: ${task.task_id}`);
-          await sendDelegationStatusUpdateNotification(task, lowerStatus);
+          if (lowerStatus === "extend") {
+            await sendDelegationExtendNotification(task);
+          } else {
+            await sendDelegationDoneNotification(task, lowerStatus);
+          }
         } catch (notifErr) {
           console.error("❌ Notification error:", notifErr);
           // Don't fail the whole transaction if notification fails
@@ -590,25 +594,15 @@ export const sendDelegationWhatsAppNotification = async (req, res) => {
         }
       };
 
-      // App link
-      const appLink = 'https://checklist-frontend-eight.vercel.app';
-
-      // Create urgent task alert message
-      const message = `🚨 URGENT TASK ALERT 🚨
-
-Name: ${doerName}
-Task ID: ${item.task_id || 'N/A'}
-Task: ${item.task_description || 'N/A'}
-Planned Date: ${formatDate(item.planned_date || item.task_start_date)}
-Given By: ${item.given_by || 'N/A'}
-
-📌 Please take immediate action and update once completed.
-
-🔗 *App Link:*
-${appLink}`;
-
-      // Send WhatsApp message
-      const result = await sendWhatsAppMessage(phoneNumber, message);
+      // Send WhatsApp Template Message (Using URGENT_TASK_ALERT)
+      const result = await sendUrgentAlertNotification(phoneNumber, {
+        name: doerName,
+        taskId: item.task_id,
+        description: item.task_description,
+        plannedDate: item.planned_date || item.task_start_date,
+        givenBy: item.given_by,
+        imageUrl: item.image // Use task image if available
+      });
 
       results.push({
         name: doerName,
@@ -737,7 +731,7 @@ export const revertDelegationTask = async (req, res) => {
       // We should really depend on 'id' from delegation_done if possible.
       // If id is provided, delete that specific entry.
       // If only task_id provided, we might delete all done entries? prefer id.
-      
+
       if (id) {
         await client.query("DELETE FROM delegation_done WHERE id = $1", [id]);
         console.log(`🗑️ Deleted delegation_done row id: ${id}`);
