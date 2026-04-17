@@ -13,6 +13,7 @@ const TEMPLATE_ASSIGN = process.env.TASK_ASSIGN_REMINDER; // task_assignment_rem
 const TEMPLATE_COMPLETE = process.env.DELEGATION_TASK_COMPLETE; // delegation_task_complete
 const TEMPLATE_EXTEND = process.env.DELEGATION_TASK_EXTENDED; // delegation_task_extended
 const TEMPLATE_URGENT = process.env.URGENT_TASK_ALERT; // urgent_task_alert
+const TEMPLATE_DAILY_SUMMARY = process.env.DAILY_TASK_REMINDER; // checklist_daily_summary
 
 /**
  * Format phone number for WhatsApp
@@ -310,10 +311,55 @@ export const sendUrgentAlertNotification = async (phoneNumber, details) => {
   return await sendMetaWhatsApp(payload);
 };
 
+/**
+ * Send Daily Summary Notification via Meta Template
+ */
+export const sendDailySummaryNotification = async (phoneNumber, details) => {
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+
+  const { name, totalTasks, pendingCount, todayCount } = details;
+
+  console.log(`📱 Sending Daily Summary Template via Meta to: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_DAILY_SUMMARY,
+      language: { code: "en" },
+      components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: name || 'Team Member' },
+            { type: "text", text: String(totalTasks || 0) },
+            { type: "text", text: String(pendingCount || 0) },
+            { type: "text", text: String(todayCount || 0) }
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+};
+
 export default { 
   sendWhatsAppMessage, 
   sendTaskAssignmentNotification,
   sendDelegationDoneNotification,
   sendDelegationExtendNotification,
-  sendUrgentAlertNotification
+  sendUrgentAlertNotification,
+  sendDailySummaryNotification
 };
