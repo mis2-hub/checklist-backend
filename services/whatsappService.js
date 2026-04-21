@@ -14,6 +14,7 @@ const TEMPLATE_COMPLETE = process.env.DELEGATION_TASK_COMPLETE; // delegation_ta
 const TEMPLATE_EXTEND = process.env.DELEGATION_TASK_EXTENDED; // delegation_task_extended
 const TEMPLATE_URGENT = process.env.URGENT_TASK_ALERT; // urgent_task_alert
 const TEMPLATE_DAILY_SUMMARY = process.env.DAILY_TASK_REMINDER; // checklist_daily_summary
+const ADMIN_NUMBER = process.env.ADMIN_WHATSAPP_NUMBER;
 
 /**
  * Format phone number for WhatsApp
@@ -25,12 +26,17 @@ const formatPhoneNumber = (phoneNumber) => {
   // Convert to string and remove any spaces, dashes, parentheses or plus signs
   let phone = String(phoneNumber).replace(/[\s\-\(\)\+]/g, '');
   
-  // If number starts with 0, replace with 91 (India)
-  if (phone.startsWith('0')) {
+  // If already 12 digits and starts with 91, it's already formatted correctly for India
+  if (phone.length === 12 && phone.startsWith('91')) {
+    return phone;
+  }
+
+  // If number starts with 0 and is 11 digits (0 + 10 digits), replace with 91 (India)
+  if (phone.startsWith('0') && phone.length === 11) {
     phone = '91' + phone.substring(1);
   }
   
-  // If number doesn't have country code (less than 12 digits), add 91
+  // If number doesn't have country code (is 10 digits), add 91
   if (phone.length === 10) {
     phone = '91' + phone;
   }
@@ -173,8 +179,7 @@ export const sendTaskAssignmentNotification = async (phoneNumber, taskDetails) =
  * Send Delegation Done Notification via Meta Template (to Admin)
  */
 export const sendDelegationDoneNotification = async (taskDetails, updateType) => {
-  const adminNumber = '9637655555'; 
-  const formattedPhone = formatPhoneNumber(adminNumber);
+  const formattedPhone = formatPhoneNumber(ADMIN_NUMBER);
   if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
 
   const { name, task_id, task_description, reason } = taskDetails;
@@ -206,9 +211,7 @@ export const sendDelegationDoneNotification = async (taskDetails, updateType) =>
         {
           type: "body",
           parameters: [
-            { type: "text", text: statusText },
-            { type: "text", text: name || 'N/A' },
-            { type: "text", text: task_id || 'N/A' },
+            { type: "text", text: String(task_id || 'N/A') },
             { type: "text", text: task_description || 'N/A' },
             { type: "text", text: reason || 'N/A' }
           ]
@@ -224,8 +227,7 @@ export const sendDelegationDoneNotification = async (taskDetails, updateType) =>
  * Send Delegation Extend Notification via Meta Template (to Admin)
  */
 export const sendDelegationExtendNotification = async (taskDetails) => {
-  const adminNumber = '9637655555'; 
-  const formattedPhone = formatPhoneNumber(adminNumber);
+  const formattedPhone = formatPhoneNumber(ADMIN_NUMBER);
   if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
 
   const { name, task_id, task_description, next_extend_date, reason } = taskDetails;
@@ -252,8 +254,7 @@ export const sendDelegationExtendNotification = async (taskDetails) => {
         {
           type: "body",
           parameters: [
-            { type: "text", text: name || 'N/A' },
-            { type: "text", text: task_id || 'N/A' },
+            { type: "text", text: String(task_id || 'N/A') },
             { type: "text", text: task_description || 'N/A' },
             { type: "text", text: formatDate(next_extend_date) },
             { type: "text", text: reason || 'N/A' }
