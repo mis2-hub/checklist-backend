@@ -14,6 +14,9 @@ const TEMPLATE_COMPLETE = process.env.DELEGATION_TASK_COMPLETE; // delegation_ta
 const TEMPLATE_EXTEND = process.env.DELEGATION_TASK_EXTENDED; // delegation_task_extended
 const TEMPLATE_URGENT = process.env.URGENT_TASK_ALERT; // urgent_task_alert
 const TEMPLATE_DAILY_SUMMARY = process.env.DAILY_TASK_REMINDER; // checklist_daily_summary
+const TEMPLATE_USER_REPLY = process.env.USER_DELEGATION_REPLY; 
+const TEMPLATE_ADMIN_REPLY = process.env.ADMIN_DELEGATION_REPLY;
+const TEMPLATE_REVERT = process.env.DELEGATION_TASK_REVERT; // delegation_task_revert
 const ADMIN_NUMBER = process.env.ADMIN_WHATSAPP_NUMBER;
 
 /**
@@ -182,7 +185,8 @@ export const sendDelegationDoneNotification = async (taskDetails, updateType) =>
   const formattedPhone = formatPhoneNumber(ADMIN_NUMBER);
   if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
 
-  const { name, task_id, task_description, reason } = taskDetails;
+  const { name, task_id, task_description, reason, remarks, submission_date } = taskDetails;
+  const finalRemarks = reason || remarks || 'N/A';
   
   let statusText = 'Completed';
   if (updateType === 'partial_done') {
@@ -211,9 +215,12 @@ export const sendDelegationDoneNotification = async (taskDetails, updateType) =>
         {
           type: "body",
           parameters: [
-            { type: "text", text: String(task_id || 'N/A') },
-            { type: "text", text: task_description || 'N/A' },
-            { type: "text", text: reason || 'N/A' }
+            { type: "text", text: name || 'N/A' },                // {{1}} Task Done By Doer
+            { type: "text", text: String(task_id || 'N/A') },     // {{2}} Task ID
+            { type: "text", text: task_description || 'N/A' },    // {{3}} Task Description
+            { type: "text", text: finalRemarks },             // {{4}} Remarks
+            { type: "text", text: formatDate(submission_date || new Date()) }, // {{5}} Submission Date
+            { type: "text", text: statusText }                    // {{6}} Status
           ]
         }
       ]
@@ -356,11 +363,131 @@ export const sendDailySummaryNotification = async (phoneNumber, details) => {
   return await sendMetaWhatsApp(payload);
 };
 
+/**
+ * Send User Delegation Reply Notification via Meta Template (to Admin)
+ */
+export const sendUserDelegationReplyNotification = async (taskDetails) => {
+  const formattedPhone = formatPhoneNumber(ADMIN_NUMBER);
+  if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
+
+  const { task_id, name, task_description, remarks, planned_date } = taskDetails;
+
+  console.log(`📱 Sending User Delegation Reply Template via Meta to Admin: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_USER_REPLY,
+      language: { code: "en" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: name || 'N/A' },           // {{1}} Reply by Doer
+            { type: "text", text: String(task_id || 'N/A') }, // {{2}} Task ID
+            { type: "text", text: task_description || 'N/A' }, // {{3}} Task Description
+            { type: "text", text: remarks || 'N/A' },        // {{4}} Reply (Remarks)
+            { type: "text", text: formatDate(planned_date) }  // {{5}} Target Date
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+};
+
+/**
+ * Send Admin Delegation Reply Notification via Meta Template (to User)
+ */
+export const sendAdminDelegationReplyNotification = async (phoneNumber, taskDetails) => {
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+
+  const { task_id, name, task_description, adminremarks, planned_date } = taskDetails;
+
+  console.log(`📱 Sending Admin Delegation Reply Template via Meta to: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_ADMIN_REPLY,
+      language: { code: "en" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: String(task_id || 'N/A') },
+            { type: "text", text: name || 'N/A' },
+            { type: "text", text: task_description || 'N/A' },
+            { type: "text", text: adminremarks || 'N/A' },
+            { type: "text", text: formatDate(planned_date) }
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+};
+
+/**
+ * Send Task Reverted Notification via Meta Template (to User)
+ */
+export const sendTaskRevertedNotification = async (phoneNumber, taskDetails) => {
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+
+  const { reverted_by, task_id, task_description, reply, planned_date } = taskDetails;
+
+  console.log(`📱 Sending Task Reverted Template via Meta to: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_REVERT,
+      language: { code: "en" },
+      components: [
+        {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: reverted_by || 'Admin' },             // {{1}} Revert to Pending by
+            { type: "text", text: String(task_id || 'N/A') },           // {{2}} Task ID
+            { type: "text", text: task_description || 'N/A' },          // {{3}} Task Description
+            { type: "text", text: reply || 'N/A' },                     // {{4}} Reply
+            { type: "text", text: formatDate(planned_date) }             // {{5}} Target Date
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+};
+
 export default { 
   sendWhatsAppMessage, 
   sendTaskAssignmentNotification,
   sendDelegationDoneNotification,
   sendDelegationExtendNotification,
   sendUrgentAlertNotification,
-  sendDailySummaryNotification
+  sendDailySummaryNotification,
+  sendUserDelegationReplyNotification,
+  sendAdminDelegationReplyNotification,
+  sendTaskRevertedNotification
 };

@@ -1,6 +1,6 @@
 import pool from "../config/db.js";
 import { uploadToS3 } from "../middleware/s3Upload.js";
-import { sendWhatsAppMessage, sendDelegationDoneNotification, sendDelegationExtendNotification, sendUrgentAlertNotification } from "../services/whatsappService.js";
+import { sendWhatsAppMessage, sendDelegationDoneNotification, sendDelegationExtendNotification, sendUrgentAlertNotification, sendUserDelegationReplyNotification, sendAdminDelegationReplyNotification, sendTaskRevertedNotification } from "../services/whatsappService.js";
 
 
 /* ------------------------------------------------------
@@ -472,7 +472,7 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
           if (lowerStatus === "extend") {
             await sendDelegationExtendNotification(task);
           } else {
-            await sendDelegationDoneNotification(task, lowerStatus);
+            await sendDelegationDoneNotification(updated.rows[0], lowerStatus);
           }
         } catch (notifErr) {
           console.error("❌ Notification error:", notifErr);
@@ -643,7 +643,7 @@ export const updateAdminRemarks = async (req, res) => {
       SET adminremarks = $1,
           updated_at = NOW() AT TIME ZONE 'Asia/Kolkata'
       WHERE task_id = $2
-      RETURNING task_id, adminremarks, to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at;
+      RETURNING *;
     `;
 
     const result = await pool.query(updateQuery, [adminremarks || null, task_id]);
@@ -652,9 +652,24 @@ export const updateAdminRemarks = async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
 
+    const task = result.rows[0];
+
+    // Send WhatsApp to User
+    try {
+      const userResult = await pool.query(
+        'SELECT number FROM users WHERE user_name = $1',
+        [task.name]
+      );
+      if (userResult.rows.length > 0 && userResult.rows[0].number) {
+        await sendAdminDelegationReplyNotification(userResult.rows[0].number, task);
+      }
+    } catch (waErr) {
+      console.error("WhatsApp Error (Admin Reply):", waErr);
+    }
+
     res.json({
       message: "Admin remarks updated successfully",
-      data: result.rows[0]
+      data: task
     });
 
   } catch (err) {
@@ -680,7 +695,7 @@ export const updateUserRemarks = async (req, res) => {
       SET remarks = $1,
           updated_at = NOW() AT TIME ZONE 'Asia/Kolkata'
       WHERE task_id = $2
-      RETURNING task_id, remarks, to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at;
+      RETURNING *;
     `;
 
     const result = await pool.query(updateQuery, [remarks || null, task_id]);
@@ -689,9 +704,18 @@ export const updateUserRemarks = async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
 
+    const task = result.rows[0];
+
+    // Send WhatsApp to Admin
+    try {
+      await sendUserDelegationReplyNotification(task);
+    } catch (waErr) {
+      console.error("WhatsApp Error (User Reply):", waErr);
+    }
+
     res.json({
       message: "User remarks updated successfully",
-      data: result.rows[0]
+      data: task
     });
 
   } catch (err) {
@@ -751,6 +775,7 @@ export const revertDelegationTask = async (req, res) => {
             updated_at = NOW() AT TIME ZONE 'Asia/Kolkata',
             adminremarks = NULL
         WHERE task_id = $1
+        RETURNING *;
       `;
       // Note: admin_done isn't in delegation table based on previous schema checks, it was in delegation_done? 
       // Wait, let's double check schema. 
@@ -759,8 +784,29 @@ export const revertDelegationTask = async (req, res) => {
       // So admin_done is in delegation_done. We just deleted the row, so that's fine.
       // But we need to update delegation status.
 
-      await client.query(updateQuery, [task_id]);
+      const updated = await client.query(updateQuery, [task_id]);
       console.log(`🔄 Updated delegation status for task_id: ${task_id}`);
+
+      // Send WhatsApp Notification to Doer
+      if (updated.rows.length > 0) {
+        const task = updated.rows[0];
+        try {
+          const userResult = await client.query('SELECT number FROM users WHERE user_name = $1', [task.name]);
+          if (userResult.rows.length > 0 && userResult.rows[0].number) {
+            const phoneNumber = userResult.rows[0].number;
+            const payloadData = {
+              reverted_by: 'Admin', // Or req.query.username if available
+              task_id: task.task_id,
+              task_description: task.task_description,
+              reply: item.remarks || 'Task Reverted',
+              planned_date: task.planned_date || task.task_start_date
+            };
+            await sendTaskRevertedNotification(phoneNumber, payloadData);
+          }
+        } catch (waErr) {
+          console.error("WhatsApp Error (Revert):", waErr);
+        }
+      }
     }
 
     await client.query("COMMIT");
