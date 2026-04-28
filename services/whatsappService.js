@@ -17,6 +17,7 @@ const TEMPLATE_DAILY_SUMMARY = process.env.DAILY_TASK_REMINDER; // checklist_dai
 const TEMPLATE_USER_REPLY = process.env.USER_DELEGATION_REPLY; 
 const TEMPLATE_ADMIN_REPLY = process.env.ADMIN_DELEGATION_REPLY;
 const TEMPLATE_REVERT = process.env.DELEGATION_TASK_REVERT; // delegation_task_revert
+const TEMPLATE_EVENING_REMINDER = process.env.DAILY_EVENING_REMINDER;
 const ADMIN_NUMBER = process.env.ADMIN_WHATSAPP_NUMBER;
 
 /**
@@ -339,21 +340,11 @@ export const sendDailySummaryNotification = async (phoneNumber, details) => {
       language: { code: "en" },
       components: [
         {
-          type: "header",
-          parameters: [
-            {
-              type: "image",
-              image: { link: DEFAULT_IMAGE_URL }
-            }
-          ]
-        },
-        {
           type: "body",
           parameters: [
-            { type: "text", text: name || 'Team Member' },
-            { type: "text", text: String(totalTasks || 0) },
-            { type: "text", text: String(pendingCount || 0) },
-            { type: "text", text: String(todayCount || 0) }
+            { type: "text", text: String(todayCount || 0) },    // {{1}} Today's Tasks
+            { type: "text", text: name || 'Team Member' },      // {{2}} Task of Doer (Name)
+            { type: "text", text: String(pendingCount || 0) }   // {{3}} Overdue Tasks
           ]
         }
       ]
@@ -406,7 +397,7 @@ export const sendAdminDelegationReplyNotification = async (phoneNumber, taskDeta
   const formattedPhone = formatPhoneNumber(phoneNumber);
   if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
 
-  const { task_id, name, task_description, adminremarks, planned_date } = taskDetails;
+  const { task_id, name, task_description, adminremarks, planned_date, image } = taskDetails;
 
   console.log(`📱 Sending Admin Delegation Reply Template via Meta to: ${formattedPhone}`);
 
@@ -419,13 +410,22 @@ export const sendAdminDelegationReplyNotification = async (phoneNumber, taskDeta
       language: { code: "en" },
       components: [
         {
+          type: "header",
+          parameters: [
+            {
+              type: "image",
+              image: { link: image || DEFAULT_IMAGE_URL }
+            }
+          ]
+        },
+        {
           type: "body",
           parameters: [
-            { type: "text", text: String(task_id || 'N/A') },
-            { type: "text", text: name || 'N/A' },
-            { type: "text", text: task_description || 'N/A' },
-            { type: "text", text: adminremarks || 'N/A' },
-            { type: "text", text: formatDate(planned_date) }
+            { type: "text", text: 'Admin' },                    // {{1}} Reply by (Admin)
+            { type: "text", text: String(task_id || 'N/A') },    // {{2}} Task ID
+            { type: "text", text: task_description || 'N/A' },   // {{3}} Task Description
+            { type: "text", text: adminremarks || 'N/A' },       // {{4}} Reply (Admin Remarks)
+            { type: "text", text: formatDate(planned_date) }     // {{5}} Target Date
           ]
         }
       ]
@@ -480,8 +480,40 @@ export const sendTaskRevertedNotification = async (phoneNumber, taskDetails) => 
   return await sendMetaWhatsApp(payload);
 };
 
+export const sendDailyReminderNotification = async (phoneNumber, details) => {
+  const formattedPhone = formatPhoneNumber(phoneNumber);
+  if (!formattedPhone) return { success: false, error: 'Invalid phone number' };
+
+  const { name, pendingCount } = details;
+
+  console.log(`📱 Sending Evening Reminder Template via Meta to: ${formattedPhone}`);
+
+  const payload = {
+    messaging_product: "whatsapp",
+    to: formattedPhone,
+    type: "template",
+    template: {
+      name: TEMPLATE_EVENING_REMINDER,
+      language: { code: "en" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: name || 'Team Member' },
+            { type: "text", text: String(pendingCount || 0) }
+          ]
+        }
+      ]
+    }
+  };
+
+  return await sendMetaWhatsApp(payload);
+
+}
+
 export default { 
   sendWhatsAppMessage, 
+
   sendTaskAssignmentNotification,
   sendDelegationDoneNotification,
   sendDelegationExtendNotification,
@@ -489,5 +521,6 @@ export default {
   sendDailySummaryNotification,
   sendUserDelegationReplyNotification,
   sendAdminDelegationReplyNotification,
-  sendTaskRevertedNotification
+  sendTaskRevertedNotification,
+  sendDailyReminderNotification
 };

@@ -5,7 +5,9 @@ import {
   updateChecklist,
   adminDoneChecklist,
   sendWhatsAppNotification,
-  deleteChecklistInRange
+  deleteChecklistInRange,
+  updateChecklistAdminRemarks,
+  updateChecklistUserRemarks
 } from "../controllers/checklistController.js";
 
 const router = express.Router();
@@ -16,5 +18,7 @@ router.post("/update", updateChecklist);
 router.post("/delete-range", deleteChecklistInRange);
 router.post("/admin-done", adminDoneChecklist);
 router.post("/send-whatsapp", sendWhatsAppNotification);
+router.patch("/:task_id/admin-remarks", updateChecklistAdminRemarks);
+router.patch("/:task_id/user-remarks", updateChecklistUserRemarks);
 
 export default router;

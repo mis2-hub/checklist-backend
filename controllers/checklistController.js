@@ -58,6 +58,8 @@ export const getPendingChecklist = async (req, res) => {
         task_start_date::text as task_start_date,
         submission_date::text as submission_date,
         admin_done_remarks,
+        user_reply,
+        admin_reply,
         COUNT(*) OVER() AS total_count
       FROM checklist
       WHERE ${where}
@@ -164,6 +166,8 @@ export const getChecklistHistory = async (req, res) => {
         task_start_date::text as task_start_date,
         submission_date::text as submission_date,
         admin_done_remarks,
+        user_reply,
+        admin_reply,
         COUNT(*) OVER() AS total_count
       FROM checklist
       WHERE ${where}
@@ -239,6 +243,8 @@ export const updateChecklist = async (req, res) => {
           SET 
            status = $1,
             remark = $2,
+            user_reply = $5,
+            admin_reply = $6,
             submission_date = date_trunc('second', NOW() AT TIME ZONE 'Asia/Kolkata'),
             image = $3
           WHERE task_id = $4
@@ -249,6 +255,8 @@ export const updateChecklist = async (req, res) => {
           item.remarks || "",
           finalImageUrl,
           item.taskId,
+          item.user_reply || "",
+          item.admin_reply || ""
         ]);
       }
 
@@ -282,13 +290,14 @@ export const adminDoneChecklist = async (req, res) => {
     const sql = `
       UPDATE checklist
       SET admin_done = 'Done',
-          admin_done_remarks = $2
+          admin_done_remarks = $2,
+          admin_reply = $3
       WHERE task_id = $1
     `;
 
     for (const item of items) {
       // item must have task_id, optional remarks
-      await client.query(sql, [item.task_id, item.remarks || null]);
+      await client.query(sql, [item.task_id, item.remarks || null, item.admin_reply || null]);
     }
 
     await client.query("COMMIT");
@@ -380,6 +389,62 @@ export const sendWhatsAppNotification = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ sendWhatsAppNotification Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// -----------------------------------------
+// 6️⃣ UPDATE ADMIN REPLY (super_admin only)
+// -----------------------------------------
+export const updateChecklistAdminRemarks = async (req, res) => {
+  try {
+    const { task_id } = req.params;
+    const { adminremarks } = req.body;
+
+    if (!task_id) {
+      return res.status(400).json({ error: "task_id is required" });
+    }
+
+    const result = await pool.query(
+      `UPDATE checklist SET admin_reply = $1 WHERE task_id = $2 RETURNING task_id, admin_reply`,
+      [adminremarks || null, task_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    res.json({ message: "Admin reply updated successfully", data: result.rows[0] });
+  } catch (err) {
+    console.error("❌ updateChecklistAdminRemarks Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// -----------------------------------------
+// 7️⃣ UPDATE USER REMARKS (user's own remark)
+// -----------------------------------------
+export const updateChecklistUserRemarks = async (req, res) => {
+  try {
+    const { task_id } = req.params;
+    const { remarks } = req.body;
+
+    if (!task_id) {
+      return res.status(400).json({ error: "task_id is required" });
+    }
+
+    const result = await pool.query(
+      `UPDATE checklist SET remark = $1 WHERE task_id = $2 RETURNING task_id, remark`,
+      [remarks || null, task_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+
+    res.json({ message: "Remark updated successfully", data: result.rows[0] });
+  } catch (err) {
+    console.error("❌ updateChecklistUserRemarks Error:", err);
     res.status(500).json({ error: err.message });
   }
 };

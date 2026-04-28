@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import pool from '../config/db.js';
-import { sendDailySummaryNotification } from './whatsappService.js';
+
+import { sendDailySummaryNotification, sendDailyReminderNotification } from './whatsappService.js';
 
 /**
  * Initialize all cron jobs
@@ -13,6 +14,11 @@ export const initCronJobs = () => {
         await sendDailySummaries();
     }, {
         scheduled: true,
+        timezone: "Asia/Kolkata"
+    });
+
+    //
+    cron.schedule("0 17 * * *", sendDailyReminder, {
         timezone: "Asia/Kolkata"
     });
 
@@ -30,7 +36,7 @@ const sendDailySummaries = async () => {
             WHERE working_date::date = CURRENT_DATE
         `;
         const { rows: workingDayRows } = await pool.query(workingDayQuery);
-        
+
         if (parseInt(workingDayRows[0].count) === 0) {
             console.log('ℹ️ Today is not a working day according to the calendar. Skipping WhatsApp summaries.');
             return;
@@ -67,7 +73,9 @@ const sendDailySummaries = async () => {
                     WITH checklist_summary AS (
                         SELECT 
                             COUNT(*) as total_till_date,
-                            COUNT(*) FILTER (WHERE submission_date IS NULL) as pending_till_date,
+                            -- Overdue: Pending tasks from PREVIOUS days
+                            COUNT(*) FILTER (WHERE submission_date IS NULL AND task_start_date::date < CURRENT_DATE) as overdue_count,
+                            -- Today: Tasks assigned for exactly today
                             COUNT(*) FILTER (WHERE task_start_date::date = CURRENT_DATE) as today_total
                         FROM checklist
                         WHERE LOWER(name) = LOWER($1)
@@ -76,7 +84,9 @@ const sendDailySummaries = async () => {
                     delegation_summary AS (
                         SELECT 
                             COUNT(*) as total_till_date,
-                            COUNT(*) FILTER (WHERE submission_date IS NULL AND (status IS NULL OR status = '' OR status IN ('pending', 'extend'))) as pending_till_date,
+                            -- Overdue: Pending tasks from PREVIOUS days
+                            COUNT(*) FILTER (WHERE submission_date IS NULL AND (status IS NULL OR status = '' OR status IN ('pending', 'extend')) AND task_start_date::date < CURRENT_DATE) as overdue_count,
+                            -- Today: Tasks assigned for exactly today
                             COUNT(*) FILTER (WHERE task_start_date::date = CURRENT_DATE) as today_total
                         FROM delegation
                         WHERE LOWER(name) = LOWER($1)
@@ -84,23 +94,23 @@ const sendDailySummaries = async () => {
                     )
                     SELECT 
                         (c.total_till_date + d.total_till_date) as total_tasks,
-                        (c.pending_till_date + d.pending_till_date) as total_pending,
+                        (c.overdue_count + d.overdue_count) as total_overdue,
                         (c.today_total + d.today_total) as today_tasks
                     FROM checklist_summary c, delegation_summary d
                 `;
-                
+
                 const { rows: counts } = await pool.query(taskQuery, [userName]);
                 const totalTasks = parseInt(counts[0].total_tasks || 0);
-                const totalPending = parseInt(counts[0].total_pending || 0);
+                const totalOverdue = parseInt(counts[0].total_overdue || 0);
                 const todayTasks = parseInt(counts[0].today_tasks || 0);
 
                 // 3. Send notification if there are any tasks assigned till today (even if completed)
                 if (totalTasks > 0) {
                     const result = await sendDailySummaryNotification(phoneNumber, {
-                        name: userName,
-                        totalTasks: totalTasks,      // {{2}}
-                        pendingCount: totalPending,  // {{3}}
-                        todayCount: todayTasks       // {{4}}
+                        name: userName,              // {{2}} Task of Doer
+                        totalTasks: totalTasks,      // (Not used in template)
+                        pendingCount: totalOverdue,  // {{3}} Overdue Tasks
+                        todayCount: todayTasks       // {{1}} Today's Tasks
                     });
 
                     if (result.success) {
@@ -117,11 +127,100 @@ const sendDailySummaries = async () => {
             }
         }
 
-        console.log('✅ Daily WhatsApp Summary Cron Job Completed.');
+        console.log('✅ Daily WhatsApp Morning Summary Cron Job Completed.');
 
     } catch (error) {
         console.error('❌ Critical Error in Daily WhatsApp Summary Cron Job:', error.message);
     }
 };
+
+const sendDailyReminder = async () => {
+    try {
+        // 0. Check if today is a working day
+        const workingDayQuery = `
+            SELECT COUNT(*) FROM working_day_calender
+            WHERE working_date::date = CURRENT_DATE
+        `;
+        const { rows: workingDayRows } = await pool.query(workingDayQuery);
+
+        if (parseInt(workingDayRows[0].count) === 0) {
+            console.log('ℹ️ Today is not a working day according to the calendar. Skipping WhatsApp summaries.');
+            return;
+        }
+
+        // 1. Fetch all active users who have a phone number
+        const userQuery = `
+            SELECT user_name, number 
+            FROM users 
+            WHERE status = 'active' 
+              AND number IS NOT NULL 
+              AND number <> 0
+        `;
+        const { rows: users } = await pool.query(userQuery);
+
+        if (users.length === 0) {
+            console.log('ℹ️ No active users with phone numbers found.');
+            return;
+        }
+
+        console.log(`📊 Processing summaries for ${users.length} users...`);
+
+        // 2. For each user, get task counts
+        for (const user of users) {
+            const userName = user.user_name;
+            const phoneNumber = user.number;
+
+            try {
+                // Query counts from BOTH checklist and delegation tables
+                const taskQuery = `
+                    WITH checklist_summary AS (
+                        SELECT 
+                            COUNT(*) FILTER (WHERE submission_date IS NULL) as pending_till_date
+                        FROM checklist
+                        WHERE LOWER(name) = LOWER($1)
+                          AND task_start_date::date <= CURRENT_DATE
+                    ),
+                    delegation_summary AS (
+                        SELECT 
+                            COUNT(*) FILTER (WHERE submission_date IS NULL AND (status IS NULL OR status = '' OR status IN ('pending', 'extend'))) as pending_till_date
+                        FROM delegation
+                        WHERE LOWER(name) = LOWER($1)
+                          AND task_start_date::date <= CURRENT_DATE
+                    )
+                    SELECT 
+                        (c.pending_till_date + d.pending_till_date) as total_pending
+                    FROM checklist_summary c, delegation_summary d
+                `;
+
+                const { rows: counts } = await pool.query(taskQuery, [userName]);
+                const totalPending = parseInt(counts[0].total_pending || 0);
+
+                // 3. Send reminder if there are pending tasks
+                if (totalPending > 0) {
+                    const result = await sendDailyReminderNotification(phoneNumber, {
+                        name: userName,
+                        pendingCount: totalPending
+                    });
+
+                    if (result.success) {
+                        console.log(`✅ Daily reminder sent to ${userName} (${phoneNumber}) with ${totalPending} pending tasks`);
+                    } else {
+                        console.error(`❌ Failed to send reminder to ${userName}:`, result.error);
+                    }
+                } else {
+                    console.log(`ℹ️ No pending tasks for ${userName}, skipping evening reminder.`);
+                }
+
+            } catch (userError) {
+                console.error(`❌ Error processing summary for user ${userName}:`, userError.message);
+            }
+        }
+
+        console.log('✅ Daily WhatsApp Evening Reminder Cron Job Completed.');
+
+    } catch (error) {
+        console.error('❌ Critical Error in Daily WhatsApp Summary Cron Job:', error.message);
+    }
+}
 
 export default { initCronJobs };
