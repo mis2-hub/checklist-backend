@@ -71,6 +71,29 @@ const formatDate = (dateStr) => {
   }
 };
 
+/**
+ * Format date to dd-mm-yyyy format
+ */
+const formatDateDDMMYYYY = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    
+    return `${day}-${month}-${year} ${hours}:${minutes}:${seconds}`;
+  } catch (e) {
+    return dateStr;
+  }
+};
+
 // Default Logo URL (Fixed 403 Forbidden issue)
 const DEFAULT_IMAGE_URL = 'https://drive.google.com/uc?export=download&id=1gb2U7C8DpdVXIJuyd75cYth8YIATg5sM'; // Direct image download link required by Meta API
 
@@ -205,22 +228,13 @@ export const sendDelegationDoneNotification = async (taskDetails, updateType) =>
       language: { code: "en" },
       components: [
         {
-          type: "header",
-          parameters: [
-            {
-              type: "image",
-              image: { link: DEFAULT_IMAGE_URL }
-            }
-          ]
-        },
-        {
           type: "body",
           parameters: [
             { type: "text", text: name || 'N/A' },                // {{1}} Task Done By Doer
             { type: "text", text: String(task_id || 'N/A') },     // {{2}} Task ID
             { type: "text", text: task_description || 'N/A' },    // {{3}} Task Description
             { type: "text", text: finalRemarks },             // {{4}} Remarks
-            { type: "text", text: formatDate(submission_date || new Date()) }, // {{5}} Submission Date
+            { type: "text", text: formatDateDDMMYYYY(submission_date || new Date()) }, // {{5}} Submission Date
             { type: "text", text: statusText }                    // {{6}} Status
           ]
         }
@@ -253,19 +267,17 @@ export const sendDelegationExtendNotification = async (taskDetails) => {
         {
           type: "header",
           parameters: [
-            {
-              type: "image",
-              image: { link: DEFAULT_IMAGE_URL }
-            }
+            { type: "text", text: 'Admin' }           // Hello {{1}}
           ]
         },
         {
           type: "body",
           parameters: [
-            { type: "text", text: String(task_id || 'N/A') },
-            { type: "text", text: task_description || 'N/A' },
-            { type: "text", text: formatDate(next_extend_date) },
-            { type: "text", text: reason || 'N/A' }
+            { type: "text", text: name || 'N/A' },                // {{1}} Task Extended by Doer
+            { type: "text", text: String(task_id || 'N/A') },     // {{2}} Task ID
+            { type: "text", text: task_description || 'N/A' },    // {{3}} Task Description
+            { type: "text", text: reason || 'N/A' },             // {{4}} Remarks (Reason)
+            { type: "text", text: formatDateDDMMYYYY(next_extend_date) } // {{5}} Extended Date
           ]
         }
       ]
@@ -380,7 +392,7 @@ export const sendUserDelegationReplyNotification = async (taskDetails) => {
             { type: "text", text: String(task_id || 'N/A') }, // {{2}} Task ID
             { type: "text", text: task_description || 'N/A' }, // {{3}} Task Description
             { type: "text", text: remarks || 'N/A' },        // {{4}} Reply (Remarks)
-            { type: "text", text: formatDate(planned_date) }  // {{5}} Target Date
+            { type: "text", text: formatDateDDMMYYYY(planned_date) }  // {{5}} Target Date
           ]
         }
       ]
@@ -410,22 +422,14 @@ export const sendAdminDelegationReplyNotification = async (phoneNumber, taskDeta
       language: { code: "en" },
       components: [
         {
-          type: "header",
-          parameters: [
-            {
-              type: "image",
-              image: { link: image || DEFAULT_IMAGE_URL }
-            }
-          ]
-        },
-        {
           type: "body",
           parameters: [
             { type: "text", text: 'Admin' },                    // {{1}} Reply by (Admin)
             { type: "text", text: String(task_id || 'N/A') },    // {{2}} Task ID
             { type: "text", text: task_description || 'N/A' },   // {{3}} Task Description
             { type: "text", text: adminremarks || 'N/A' },       // {{4}} Reply (Admin Remarks)
-            { type: "text", text: formatDate(planned_date) }     // {{5}} Target Date
+            { type: "text", text: formatDateDDMMYYYY(planned_date) }, // {{5}} Target Date
+            { type: "text", text: name || 'Team Member' }        // {{6}} Hello (Employee Name)
           ]
         }
       ]
@@ -455,22 +459,13 @@ export const sendTaskRevertedNotification = async (phoneNumber, taskDetails) => 
       language: { code: "en" },
       components: [
         {
-          type: "header",
-          parameters: [
-            {
-              type: "image",
-              image: { link: DEFAULT_IMAGE_URL }
-            }
-          ]
-        },
-        {
           type: "body",
           parameters: [
             { type: "text", text: reverted_by || 'Admin' },             // {{1}} Revert to Pending by
             { type: "text", text: String(task_id || 'N/A') },           // {{2}} Task ID
             { type: "text", text: task_description || 'N/A' },          // {{3}} Task Description
             { type: "text", text: reply || 'N/A' },                     // {{4}} Reply
-            { type: "text", text: formatDate(planned_date) }             // {{5}} Target Date
+            { type: "text", text: formatDateDDMMYYYY(planned_date) }    // {{5}} Target Date
           ]
         }
       ]
