@@ -23,7 +23,7 @@ export const getPendingChecklist = async (req, res) => {
 
     // ⭐ If user is NOT admin → filter by name
     if (role !== "admin" && role !== "super_admin" && role !== "pc role" && username) {
-      where += ` AND LOWER(name) = LOWER('${username}') `;
+      where += ` AND (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%') `;
     }
 
     // ⭐ Add search filter if search term is provided
@@ -143,7 +143,7 @@ export const getChecklistHistory = async (req, res) => {
 
     // ⭐ Normal users see only their own tasks
     if (role !== "admin" && role !== "super_admin" && role !== "pc role" && username) {
-      where += ` AND LOWER(name) = LOWER('${username}') `;
+      where += ` AND (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%') `;
     }
 
     const query = `
@@ -326,58 +326,42 @@ export const sendWhatsAppNotification = async (req, res) => {
     const results = [];
 
     for (const item of items) {
-      const doerName = item.name;
+      const allDoers = (item.name || '').split(',').map(n => n.trim()).filter(Boolean);
+      
+      for (const doerName of allDoers) {
+        // Look up doer's phone number from users table
+        const userResult = await pool.query(
+          "SELECT number FROM users WHERE user_name = $1",
+          [doerName],
+        );
 
-      // Look up doer's phone number from users table
-      const userResult = await pool.query(
-        "SELECT number FROM users WHERE user_name = $1",
-        [doerName],
-      );
+        if (userResult.rows.length === 0 || !userResult.rows[0].number) {
+          results.push({
+            name: doerName,
+            success: false,
+            error: "Phone number not found",
+          });
+          continue;
+        }
 
-      if (userResult.rows.length === 0 || !userResult.rows[0].number) {
+        const phoneNumber = userResult.rows[0].number;
+
+        // Send WhatsApp message via Template
+        const result = await sendUrgentAlertNotification(phoneNumber, {
+          name: doerName,
+          taskId: item.task_id || "N/A",
+          description: item.task_description || "N/A",
+          plannedDate: item.task_start_date,
+          givenBy: item.given_by || "N/A",
+          imageUrl: item.image
+        });
+
         results.push({
           name: doerName,
-          success: false,
-          error: "Phone number not found",
+          success: result.success,
+          error: result.error || null,
         });
-        continue;
       }
-
-      const phoneNumber = userResult.rows[0].number;
-
-      // Format date for message
-      const formatDate = (dateStr) => {
-        if (!dateStr) return "N/A";
-        try {
-          const date = new Date(dateStr);
-          if (isNaN(date.getTime())) return dateStr;
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, "0");
-          const day = String(date.getDate()).padStart(2, "0");
-          const hours = String(date.getHours()).padStart(2, "0");
-          const minutes = String(date.getMinutes()).padStart(2, "0");
-          const seconds = String(date.getSeconds()).padStart(2, "0");
-          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        } catch (e) {
-          return dateStr;
-        }
-      };
-
-      // Send WhatsApp message via Template
-      const result = await sendUrgentAlertNotification(phoneNumber, {
-        name: doerName,
-        taskId: item.task_id || "N/A",
-        description: item.task_description || "N/A",
-        plannedDate: item.task_start_date,
-        givenBy: item.given_by || "N/A",
-        imageUrl: item.image
-      });
-
-      results.push({
-        name: doerName,
-        success: result.success,
-        error: result.error || null,
-      });
     }
 
     const successCount = results.filter((r) => r.success).length;

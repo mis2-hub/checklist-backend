@@ -78,7 +78,7 @@ const sendDailySummaries = async () => {
                             -- Today: Tasks assigned for exactly today
                             COUNT(*) FILTER (WHERE task_start_date::date = CURRENT_DATE) as today_total
                         FROM checklist
-                        WHERE LOWER(name) = LOWER($1)
+                        WHERE (LOWER($1) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))
                           AND task_start_date::date <= CURRENT_DATE
                     ),
                     delegation_summary AS (
@@ -89,7 +89,7 @@ const sendDailySummaries = async () => {
                             -- Today: Tasks assigned for exactly today
                             COUNT(*) FILTER (WHERE task_start_date::date = CURRENT_DATE) as today_total
                         FROM delegation
-                        WHERE LOWER(name) = LOWER($1)
+                        WHERE (LOWER($1) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))
                           AND task_start_date::date <= CURRENT_DATE
                     )
                     SELECT 
@@ -177,14 +177,14 @@ const sendDailyReminder = async () => {
                         SELECT 
                             COUNT(*) FILTER (WHERE submission_date IS NULL) as pending_till_date
                         FROM checklist
-                        WHERE LOWER(name) = LOWER($1)
+                        WHERE (LOWER($1) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))
                           AND task_start_date::date <= CURRENT_DATE
                     ),
                     delegation_summary AS (
                         SELECT 
                             COUNT(*) FILTER (WHERE submission_date IS NULL AND (status IS NULL OR status = '' OR status IN ('pending', 'extend'))) as pending_till_date
                         FROM delegation
-                        WHERE LOWER(name) = LOWER($1)
+                        WHERE (LOWER($1) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))
                           AND task_start_date::date <= CURRENT_DATE
                     )
                     SELECT 

@@ -41,14 +41,14 @@ export const fetchDashboardDataService = async ({
 
     // Role-based filter
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     }
 
     // Staff filter (admin)
     if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -140,11 +140,11 @@ export const countTotalTaskService = async ({
     let i = 2;
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -193,11 +193,11 @@ export const countCompleteTaskService = async ({
     }
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -246,11 +246,11 @@ export const countPendingOrDelayTaskService = async ({
     }
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -299,11 +299,11 @@ export const countOverDueORExtendedTaskService = async ({
     }
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -367,11 +367,11 @@ export const fetchStaffTasksDataService = async ({
     let i = 2;
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -452,11 +452,11 @@ export const getStaffTasksCountService = async ({
     let i = 2;
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     } else if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -596,7 +596,7 @@ export const fetchChecklistDateRangeService = async ({
     }
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     }
@@ -608,7 +608,7 @@ export const fetchChecklistDateRangeService = async ({
     }
 
     if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -685,7 +685,7 @@ export const getChecklistDateRangeCountService = async ({
     }
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     }
@@ -697,7 +697,7 @@ export const getChecklistDateRangeCountService = async ({
     }
 
     if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }
@@ -763,7 +763,7 @@ export const fetchChecklistDateRangeStatsService = async ({
     }
 
     if (role === "user" && username) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(username);
       i++;
     }
@@ -775,7 +775,7 @@ export const fetchChecklistDateRangeStatsService = async ({
     }
 
     if (staffFilter && staffFilter !== "all" && (role === "admin" || role === "super_admin")) {
-      conditions.push(`LOWER(name) = LOWER($${i})`);
+      conditions.push(`($${i} = ANY(SELECT TRIM(n) FROM unnest(string_to_array(name, ',')) n))`);
       params.push(staffFilter);
       i++;
     }

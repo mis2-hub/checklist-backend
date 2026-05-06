@@ -191,38 +191,40 @@ export const postAssignTasks = async (req, res) => {
 
     // 🔔 Send WhatsApp notification to the doer
     try {
-      const doerName = tasks[0].doer;
+      const allDoers = (tasks[0].doer || '').split(',').map(name => name.trim()).filter(Boolean);
       
-      // Look up doer's phone number from users table
-      const userResult = await pool.query(
-        'SELECT number FROM users WHERE user_name = $1',
-        [doerName]
-      );
+      for (const doerName of allDoers) {
+        // Look up doer's phone number from users table
+        const userResult = await pool.query(
+          'SELECT number FROM users WHERE user_name = $1',
+          [doerName]
+        );
 
-      if (userResult.rows.length > 0 && userResult.rows[0].number) {
-        const phoneNumber = userResult.rows[0].number;
-        
-        // Send notification asynchronously (don't block response)
-        sendTaskAssignmentNotification(phoneNumber, {
-          doerName: doerName,
-          taskId: insertedTaskId || 'N/A',
-          givenBy: tasks[0].givenBy,
-          description: tasks[0].description,
-          dueDate: tasks[0].dueDate || tasks[0].taskStartDate || tasks[0].startDate,
-          frequency: tasks[0].frequency,
-          imageUrl: imageUrl,
-          taskType: tasks[0].frequency === 'one-time' ? 'Delegation' : 'Checklist'
-        }).then(result => {
-          if (result.success) {
-            console.log(`✅ WhatsApp notification sent to ${doerName}`);
-          } else {
-            console.log(`⚠️ WhatsApp notification failed for ${doerName}:`, result.error);
-          }
-        }).catch(err => {
-          console.error(`❌ WhatsApp notification error for ${doerName}:`, err.message);
-        });
-      } else {
-        console.log(`ℹ️ No phone number found for doer: ${doerName}`);
+        if (userResult.rows.length > 0 && userResult.rows[0].number) {
+          const phoneNumber = userResult.rows[0].number;
+          
+          // Send notification asynchronously (don't block response)
+          sendTaskAssignmentNotification(phoneNumber, {
+            doerName: doerName,
+            taskId: insertedTaskId || 'N/A',
+            givenBy: tasks[0].givenBy,
+            description: tasks[0].description,
+            dueDate: tasks[0].dueDate || tasks[0].taskStartDate || tasks[0].startDate,
+            frequency: tasks[0].frequency,
+            imageUrl: imageUrl,
+            taskType: tasks[0].frequency === 'one-time' ? 'Delegation' : 'Checklist'
+          }).then(result => {
+            if (result.success) {
+              console.log(`✅ WhatsApp notification sent to ${doerName}`);
+            } else {
+              console.log(`⚠️ WhatsApp notification failed for ${doerName}:`, result.error);
+            }
+          }).catch(err => {
+            console.error(`❌ WhatsApp notification error for ${doerName}:`, err.message);
+          });
+        } else {
+          console.log(`ℹ️ No phone number found for doer: ${doerName}`);
+        }
       }
     } catch (notifyError) {
       // Don't fail the task creation if notification fails

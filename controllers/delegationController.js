@@ -39,7 +39,7 @@ export const fetchDelegationDataSortByDate = async (req, res) => {
           color_code_for,
           delay
         FROM delegation
-        WHERE name = '${username}'
+        WHERE (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%')
         AND (
           (status IS NULL OR status = '' OR status = 'extend' OR status = 'pending')
           OR (planned_date IS NOT NULL AND submission_date IS NULL)
@@ -174,7 +174,7 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
           d.department
         FROM delegation_done dd
         LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
-        WHERE dd.name = '${username}'
+        WHERE (dd.name = '${username}' OR dd.name LIKE '${username},%' OR dd.name LIKE '%, ${username}%' OR dd.name LIKE '%,${username}%')
         ORDER BY dd.created_at DESC;
       `;
     }
@@ -556,59 +556,43 @@ export const sendDelegationWhatsAppNotification = async (req, res) => {
     const results = [];
 
     for (const item of items) {
-      const doerName = item.name;
+      const allDoers = (item.name || '').split(',').map(n => n.trim()).filter(Boolean);
+      
+      for (const doerName of allDoers) {
+        // Look up phone number from users table
+        const userResult = await pool.query(
+          'SELECT number FROM users WHERE user_name = $1',
+          [doerName]
+        );
 
-      // Look up phone number from users table
-      const userResult = await pool.query(
-        'SELECT number FROM users WHERE user_name = $1',
-        [doerName]
-      );
+        if (userResult.rows.length === 0 || !userResult.rows[0].number) {
+          console.log(`⚠️ No phone number found for: ${doerName}`);
+          results.push({
+            name: doerName,
+            success: false,
+            error: 'Phone number not found'
+          });
+          continue;
+        }
 
-      if (userResult.rows.length === 0 || !userResult.rows[0].number) {
-        console.log(`⚠️ No phone number found for: ${doerName}`);
+        const phoneNumber = userResult.rows[0].number;
+
+        // Send WhatsApp Template Message (Using URGENT_TASK_ALERT)
+        const result = await sendUrgentAlertNotification(phoneNumber, {
+          name: doerName,
+          taskId: item.task_id,
+          description: item.task_description,
+          plannedDate: item.planned_date || item.task_start_date,
+          givenBy: item.given_by,
+          imageUrl: item.image // Use task image if available
+        });
+
         results.push({
           name: doerName,
-          success: false,
-          error: 'Phone number not found'
+          success: result.success,
+          error: result.error || null
         });
-        continue;
       }
-
-      const phoneNumber = userResult.rows[0].number;
-
-      // Format date for message
-      const formatDate = (dateStr) => {
-        if (!dateStr) return 'N/A';
-        try {
-          const date = new Date(dateStr);
-          if (isNaN(date.getTime())) return dateStr;
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          const hours = String(date.getHours()).padStart(2, '0');
-          const minutes = String(date.getMinutes()).padStart(2, '0');
-          const seconds = String(date.getSeconds()).padStart(2, '0');
-          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        } catch (e) {
-          return dateStr;
-        }
-      };
-
-      // Send WhatsApp Template Message (Using URGENT_TASK_ALERT)
-      const result = await sendUrgentAlertNotification(phoneNumber, {
-        name: doerName,
-        taskId: item.task_id,
-        description: item.task_description,
-        plannedDate: item.planned_date || item.task_start_date,
-        givenBy: item.given_by,
-        imageUrl: item.image // Use task image if available
-      });
-
-      results.push({
-        name: doerName,
-        success: result.success,
-        error: result.error || null
-      });
     }
 
     const successCount = results.filter(r => r.success).length;
@@ -656,12 +640,15 @@ export const updateAdminRemarks = async (req, res) => {
 
     // Send WhatsApp to User
     try {
-      const userResult = await pool.query(
-        'SELECT number FROM users WHERE user_name = $1',
-        [task.name]
-      );
-      if (userResult.rows.length > 0 && userResult.rows[0].number) {
-        await sendAdminDelegationReplyNotification(userResult.rows[0].number, task);
+      const allDoers = (task.name || '').split(',').map(n => n.trim()).filter(Boolean);
+      for (const doerName of allDoers) {
+        const userResult = await pool.query(
+          'SELECT number FROM users WHERE user_name = $1',
+          [doerName]
+        );
+        if (userResult.rows.length > 0 && userResult.rows[0].number) {
+          await sendAdminDelegationReplyNotification(userResult.rows[0].number, { ...task, name: doerName });
+        }
       }
     } catch (waErr) {
       console.error("WhatsApp Error (Admin Reply):", waErr);
@@ -791,17 +778,21 @@ export const revertDelegationTask = async (req, res) => {
       if (updated.rows.length > 0) {
         const task = updated.rows[0];
         try {
-          const userResult = await client.query('SELECT number FROM users WHERE user_name = $1', [task.name]);
-          if (userResult.rows.length > 0 && userResult.rows[0].number) {
-            const phoneNumber = userResult.rows[0].number;
-            const payloadData = {
-              reverted_by: 'Admin', // Or req.query.username if available
-              task_id: task.task_id,
-              task_description: task.task_description,
-              reply: item.remarks || 'Task Reverted',
-              planned_date: task.planned_date || task.task_start_date
-            };
-            await sendTaskRevertedNotification(phoneNumber, payloadData);
+          const allDoers = (task.name || '').split(',').map(n => n.trim()).filter(Boolean);
+          for (const doerName of allDoers) {
+            const userResult = await client.query('SELECT number FROM users WHERE user_name = $1', [doerName]);
+            if (userResult.rows.length > 0 && userResult.rows[0].number) {
+              const phoneNumber = userResult.rows[0].number;
+              const payloadData = {
+                reverted_by: 'Admin', // Or req.query.username if available
+                task_id: task.task_id,
+                task_description: task.task_description,
+                reply: item.remarks || 'Task Reverted',
+                planned_date: task.planned_date || task.task_start_date,
+                name: doerName
+              };
+              await sendTaskRevertedNotification(phoneNumber, payloadData);
+            }
           }
         } catch (waErr) {
           console.error("WhatsApp Error (Revert):", waErr);
