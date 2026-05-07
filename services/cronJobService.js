@@ -172,6 +172,8 @@ const sendDailyReminder = async () => {
 
             try {
                 // Query counts from BOTH checklist and delegation tables
+                // - Checklist pending: tasks where task_start_date <= today and not submitted
+                // - Delegation pending: tasks where planned_date = TODAY (only today's planned tasks that are still pending)
                 const taskQuery = `
                     WITH checklist_summary AS (
                         SELECT 
@@ -185,7 +187,7 @@ const sendDailyReminder = async () => {
                             COUNT(*) FILTER (WHERE submission_date IS NULL AND (status IS NULL OR status = '' OR status IN ('pending', 'extend'))) as pending_till_date
                         FROM delegation
                         WHERE (LOWER($1) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))
-                          AND task_start_date::date <= CURRENT_DATE
+                          AND planned_date::date = CURRENT_DATE
                     )
                     SELECT 
                         (c.pending_till_date + d.pending_till_date) as total_pending

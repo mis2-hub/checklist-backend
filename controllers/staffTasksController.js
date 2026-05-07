@@ -21,35 +21,44 @@ export const getStaffTasks = async (req, res) => {
       completedCondition = "LOWER(status) = 'yes'";
     }
 
-    // STEP 1 — Fetch unique names with month-year filter
-    let staffQuery = `
-      SELECT DISTINCT name 
-      FROM ${table}
-      WHERE name IS NOT NULL
-      AND name != ''
-      AND task_start_date IS NOT NULL
-      AND task_start_date <= NOW()
-    `;
-
-    // Add month-year filter if provided
+    // Build date filter once
+    let dateFilter = "";
     if (monthYear) {
       const [year, month] = monthYear.split('-').map(Number);
       const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
-      const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
-      
-      staffQuery += ` AND task_start_date >= '${startDate}' AND task_start_date <= '${endDate} 23:59:59'`;
+      const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+      dateFilter = `AND task_start_date >= '${startDate}' AND task_start_date <= '${endDate} 23:59:59'`;
+    } else {
+      dateFilter = `AND task_start_date <= NOW()`;
     }
 
+    // Staff filter clause applied after splitting
+    let staffFilterClause = "";
     if (staffFilter !== "all") {
-      staffQuery += ` AND LOWER(name) = LOWER('${staffFilter}')`;
+      staffFilterClause = `AND LOWER(TRIM(individual_name)) = LOWER('${staffFilter.replace(/'/g, "''")}')`;
     }
 
-    staffQuery += ` ORDER BY name ASC`;
+    // STEP 1 — Split comma-separated names into individual rows, then get distinct names
+    // This ensures "Ajit Patel, Madhusudan Patel, Vikas Yadav" is treated as 3 separate people
+    const staffQuery = `
+      SELECT DISTINCT TRIM(individual_name) AS name
+      FROM (
+        SELECT UNNEST(regexp_split_to_array(name, ',\\s*')) AS individual_name
+        FROM ${table}
+        WHERE name IS NOT NULL
+        AND name != ''
+        AND task_start_date IS NOT NULL
+        ${dateFilter}
+      ) AS split_names
+      WHERE TRIM(individual_name) != ''
+      ${staffFilterClause}
+      ORDER BY name ASC
+    `;
 
     const staffResult = await pool.query(staffQuery);
     const allStaff = staffResult.rows.map(r => r.name);
 
-    const paginatedStaff = allStaff.slice(offset, offset + limit);
+    const paginatedStaff = allStaff.slice(Number(offset), Number(offset) + Number(limit));
 
     if (paginatedStaff.length === 0) {
       return res.json([]);
@@ -58,7 +67,11 @@ export const getStaffTasks = async (req, res) => {
     const finalData = [];
 
     for (let staffName of paginatedStaff) {
-      // Get task data with timing calculation
+      // Escape single quotes in name for SQL
+      const escapedName = staffName.replace(/'/g, "''");
+
+      // Match tasks where this individual name appears in the (possibly comma-separated) name field
+      // Handles: exact match OR contained within a comma-separated list
       let taskQuery = `
         SELECT 
           COUNT(*) AS total,
@@ -82,21 +95,27 @@ export const getStaffTasks = async (req, res) => {
           AVG(
             CASE 
               WHEN submission_date IS NOT NULL AND submission_date > task_start_date
-              THEN EXTRACT(EPOCH FROM (submission_date - task_start_date)) / 86400.0 -- Delay in days
+              THEN EXTRACT(EPOCH FROM (submission_date - task_start_date)) / 86400.0
               ELSE 0
             END
           ) AS avg_delay_days
         FROM ${table}
-        WHERE LOWER(name)=LOWER('${staffName}')
+        WHERE (
+          LOWER(TRIM(name)) = LOWER('${escapedName}')
+          OR EXISTS (
+            SELECT 1
+            FROM UNNEST(regexp_split_to_array(name, ',\\s*')) AS individual_name
+            WHERE LOWER(TRIM(individual_name)) = LOWER('${escapedName}')
+          )
+        )
         AND task_start_date IS NOT NULL
       `;
 
-      // Add month-year filter to task query if provided
+      // Add date filter to task query
       if (monthYear) {
         const [year, month] = monthYear.split('-').map(Number);
         const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
         const endDate = new Date(year, month, 0).toISOString().split('T')[0];
-        
         taskQuery += ` AND task_start_date >= '${startDate}' AND task_start_date <= '${endDate} 23:59:59'`;
       } else {
         taskQuery += ` AND task_start_date <= NOW()`;
@@ -144,20 +163,26 @@ export const getStaffCount = async (req, res) => {
     const { dashboardType = "checklist", staffFilter = "all" } = req.query;
     const table = dashboardType;
 
+    // Also fix count query to split comma-separated names
     let query = `
-      SELECT DISTINCT name 
-      FROM ${table}
-      WHERE name IS NOT NULL 
-      AND name != ''
-      AND task_start_date::timestamp <= NOW()
+      SELECT COUNT(DISTINCT TRIM(individual_name)) AS count
+      FROM (
+        SELECT UNNEST(regexp_split_to_array(name, ',\\s*')) AS individual_name
+        FROM ${table}
+        WHERE name IS NOT NULL 
+        AND name != ''
+        AND task_start_date IS NOT NULL
+        AND task_start_date::timestamp <= NOW()
+      ) AS split_names
+      WHERE TRIM(individual_name) != ''
     `;
 
     if (staffFilter !== "all") {
-      query += ` AND LOWER(name)=LOWER('${staffFilter}')`;
+      query += ` AND LOWER(TRIM(individual_name)) = LOWER('${staffFilter.replace(/'/g, "''")}')`; 
     }
 
     const result = await pool.query(query);
-    const count = result.rows.length;
+    const count = Number(result.rows[0].count);
 
     return res.json(count);
 
