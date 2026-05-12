@@ -695,7 +695,10 @@ export const updateUserRemarks = async (req, res) => {
 
     // Send WhatsApp to Admin
     try {
-      await sendUserDelegationReplyNotification(task);
+      const waResult = await sendUserDelegationReplyNotification(task);
+      if (!waResult.success) {
+        console.error(`❌ WhatsApp notification FAILED for task ${task_id}:`, JSON.stringify(waResult.error));
+      }
     } catch (waErr) {
       console.error("WhatsApp Error (User Reply):", waErr);
     }

@@ -98,6 +98,15 @@ const formatDateDDMMYYYY = (dateStr) => {
 const DEFAULT_IMAGE_URL = 'https://drive.google.com/uc?export=download&id=1gb2U7C8DpdVXIJuyd75cYth8YIATg5sM'; // Direct image download link required by Meta API
 
 /**
+ * Truncate a string to Meta WhatsApp's 1024-char template parameter limit
+ */
+const truncate = (str, max = 1024) => {
+  if (!str) return 'N/A';
+  const s = String(str);
+  return s.length > max ? s.substring(0, max - 3) + '...' : s;
+};
+
+/**
  * Internal helper to send message via Meta Cloud API
  */
 const sendMetaWhatsApp = async (payload) => {
@@ -230,12 +239,12 @@ export const sendDelegationDoneNotification = async (taskDetails, updateType) =>
         {
           type: "body",
           parameters: [
-            { type: "text", text: name || 'N/A' },                // {{1}} Task Done By Doer
-            { type: "text", text: String(task_id || 'N/A') },     // {{2}} Task ID
-            { type: "text", text: task_description || 'N/A' },    // {{3}} Task Description
-            { type: "text", text: finalRemarks },             // {{4}} Remarks
-            { type: "text", text: formatDateDDMMYYYY(submission_date || new Date()) }, // {{5}} Submission Date
-            { type: "text", text: statusText }                    // {{6}} Status
+            { type: "text", text: truncate(name, 100) },
+            { type: "text", text: String(task_id || 'N/A') },
+            { type: "text", text: truncate(task_description, 500) },
+            { type: "text", text: truncate(finalRemarks, 500) },
+            { type: "text", text: formatDateDDMMYYYY(submission_date || new Date()) },
+            { type: "text", text: statusText }
           ]
         }
       ]
@@ -273,11 +282,11 @@ export const sendDelegationExtendNotification = async (taskDetails) => {
         {
           type: "body",
           parameters: [
-            { type: "text", text: name || 'N/A' },                // {{1}} Task Extended by Doer
-            { type: "text", text: String(task_id || 'N/A') },     // {{2}} Task ID
-            { type: "text", text: task_description || 'N/A' },    // {{3}} Task Description
-            { type: "text", text: reason || 'N/A' },             // {{4}} Remarks (Reason)
-            { type: "text", text: formatDateDDMMYYYY(next_extend_date) } // {{5}} Extended Date
+            { type: "text", text: truncate(name, 100) },
+            { type: "text", text: String(task_id || 'N/A') },
+            { type: "text", text: truncate(task_description, 500) },
+            { type: "text", text: truncate(reason, 500) },
+            { type: "text", text: formatDateDDMMYYYY(next_extend_date) }
           ]
         }
       ]
@@ -371,7 +380,10 @@ export const sendDailySummaryNotification = async (phoneNumber, details) => {
  */
 export const sendUserDelegationReplyNotification = async (taskDetails) => {
   const formattedPhone = formatPhoneNumber(ADMIN_NUMBER);
-  if (!formattedPhone) return { success: false, error: 'Invalid admin phone number' };
+  if (!formattedPhone) {
+    console.error('❌ ADMIN_WHATSAPP_NUMBER missing or invalid in .env');
+    return { success: false, error: 'Invalid admin phone number' };
+  }
 
   const { task_id, name, task_description, remarks, planned_date } = taskDetails;
 
@@ -388,18 +400,22 @@ export const sendUserDelegationReplyNotification = async (taskDetails) => {
         {
           type: "body",
           parameters: [
-            { type: "text", text: name || 'N/A' },           // {{1}} Reply by Doer
-            { type: "text", text: String(task_id || 'N/A') }, // {{2}} Task ID
-            { type: "text", text: task_description || 'N/A' }, // {{3}} Task Description
-            { type: "text", text: remarks || 'N/A' },        // {{4}} Reply (Remarks)
-            { type: "text", text: formatDateDDMMYYYY(planned_date) }  // {{5}} Target Date
+            { type: "text", text: truncate(name, 100) },
+            { type: "text", text: String(task_id || 'N/A') },
+            { type: "text", text: truncate(task_description, 500) },
+            { type: "text", text: truncate(remarks, 500) },
+            { type: "text", text: formatDateDDMMYYYY(planned_date) }
           ]
         }
       ]
     }
   };
 
-  return await sendMetaWhatsApp(payload);
+  const result = await sendMetaWhatsApp(payload);
+  if (!result.success) {
+    console.error(`❌ User reply WhatsApp FAILED for task ${task_id}:`, JSON.stringify(result.error));
+  }
+  return result;
 };
 
 /**
@@ -424,12 +440,12 @@ export const sendAdminDelegationReplyNotification = async (phoneNumber, taskDeta
         {
           type: "body",
           parameters: [
-            { type: "text", text: 'Admin' },                    // {{1}} Reply by (Admin)
-            { type: "text", text: String(task_id || 'N/A') },    // {{2}} Task ID
-            { type: "text", text: task_description || 'N/A' },   // {{3}} Task Description
-            { type: "text", text: adminremarks || 'N/A' },       // {{4}} Reply (Admin Remarks)
-            { type: "text", text: formatDateDDMMYYYY(planned_date) }, // {{5}} Target Date
-            { type: "text", text: name || 'Team Member' }        // {{6}} Hello (Employee Name)
+            { type: "text", text: 'Admin' },
+            { type: "text", text: String(task_id || 'N/A') },
+            { type: "text", text: truncate(task_description, 500) },
+            { type: "text", text: truncate(adminremarks, 500) },
+            { type: "text", text: formatDateDDMMYYYY(planned_date) },
+            { type: "text", text: truncate(name, 100) }
           ]
         }
       ]
@@ -461,11 +477,11 @@ export const sendTaskRevertedNotification = async (phoneNumber, taskDetails) => 
         {
           type: "body",
           parameters: [
-            { type: "text", text: reverted_by || 'Admin' },             // {{1}} Revert to Pending by
-            { type: "text", text: String(task_id || 'N/A') },           // {{2}} Task ID
-            { type: "text", text: task_description || 'N/A' },          // {{3}} Task Description
-            { type: "text", text: reply || 'N/A' },                     // {{4}} Reply
-            { type: "text", text: formatDateDDMMYYYY(planned_date) }    // {{5}} Target Date
+            { type: "text", text: truncate(reverted_by || 'Admin', 100) },
+            { type: "text", text: String(task_id || 'N/A') },
+            { type: "text", text: truncate(task_description, 500) },
+            { type: "text", text: truncate(reply, 500) },
+            { type: "text", text: formatDateDDMMYYYY(planned_date) }
           ]
         }
       ]
