@@ -123,20 +123,58 @@ export const fetchDelegation = async (
 };
 
 
-export const deleteChecklistTasks = async (tasks) => {
+export const deleteChecklistTasks = async (tasks, deleteScope = "past") => {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return {
+      success: false,
+      deleteScope,
+      deletedTaskIds: [],
+      deletedCount: 0,
+      message: "No tasks selected",
+    };
+  }
+
+  const validScopes = ["past", "future"];
+  const scope = validScopes.includes(deleteScope) ? deleteScope : "past";
+  const dateCondition = scope === "future"
+    ? "task_start_date::date > CURRENT_DATE"
+    : "task_start_date::date <= CURRENT_DATE";
+  const deletedTaskIds = [];
+
   for (const t of tasks) {
-    await pool.query(
+    const result = await pool.query(
       `
       DELETE FROM checklist
       WHERE name = $1
       AND task_description = $2
+      AND department IS NOT DISTINCT FROM $3
+      AND given_by IS NOT DISTINCT FROM $4
+      AND frequency IS NOT DISTINCT FROM $5
+      AND enable_reminder IS NOT DISTINCT FROM $6
+      AND require_attachment IS NOT DISTINCT FROM $7
       AND submission_date IS NULL
+      AND ${dateCondition}
+      RETURNING task_id
       `,
-      [t.name, t.task_description]
+      [
+        t.name,
+        t.task_description,
+        t.department || null,
+        t.given_by || null,
+        t.frequency || null,
+        t.enable_reminder || null,
+        t.require_attachment || null,
+      ]
     );
+    deletedTaskIds.push(...result.rows.map(row => row.task_id));
   }
 
-  return tasks;
+  return {
+    success: true,
+    deleteScope: scope,
+    deletedTaskIds,
+    deletedCount: deletedTaskIds.length,
+  };
 };
 
 

@@ -33,7 +33,7 @@ router.post("/delegation", async (req, res) => {
 });
 
 router.post("/delete-checklist", async (req, res) => {
-  const result = await deleteChecklistTasks(req.body.tasks);
+  const result = await deleteChecklistTasks(req.body.tasks, req.body.deleteScope);
   res.json(result);
 });
 
