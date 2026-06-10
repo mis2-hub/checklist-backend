@@ -134,16 +134,29 @@ export const deleteChecklistTasks = async (tasks, deleteScope = "past") => {
     };
   }
 
-  const validScopes = ["past", "future"];
+  const validScopes = ["past", "future", "all"];
   const scope = validScopes.includes(deleteScope) ? deleteScope : "past";
-  const dateCondition = scope === "future"
-    ? "task_start_date::date > CURRENT_DATE"
-    : "task_start_date::date <= CURRENT_DATE";
   const deletedTaskIds = [];
 
   for (const t of tasks) {
-    const result = await pool.query(
-      `
+    let queryText;
+    if (scope === "all") {
+      queryText = `
+      DELETE FROM checklist
+      WHERE name = $1
+      AND task_description = $2
+      AND department IS NOT DISTINCT FROM $3
+      AND given_by IS NOT DISTINCT FROM $4
+      AND frequency IS NOT DISTINCT FROM $5
+      AND enable_reminder IS NOT DISTINCT FROM $6
+      AND require_attachment IS NOT DISTINCT FROM $7
+      RETURNING task_id
+      `;
+    } else {
+      const dateCondition = scope === "future"
+        ? "task_start_date::date > CURRENT_DATE"
+        : "task_start_date::date <= CURRENT_DATE";
+      queryText = `
       DELETE FROM checklist
       WHERE name = $1
       AND task_description = $2
@@ -155,7 +168,10 @@ export const deleteChecklistTasks = async (tasks, deleteScope = "past") => {
       AND submission_date IS NULL
       AND ${dateCondition}
       RETURNING task_id
-      `,
+      `;
+    }
+    const result = await pool.query(
+      queryText,
       [
         t.name,
         t.task_description,
