@@ -313,7 +313,38 @@ export const adminDoneChecklist = async (req, res) => {
 };
 
 // -----------------------------------------
-// 5️⃣ SEND WHATSAPP NOTIFICATION (Admin Only)
+// 5️⃣ REVERT TO CHECKLIST (Admin Only)
+// -----------------------------------------
+export const revertChecklistAdminDone = async (req, res) => {
+  try {
+    const task_ids = req.body; // array of task_ids
+
+    if (!Array.isArray(task_ids) || task_ids.length === 0)
+      return res.status(400).json({ error: "task_ids array is required" });
+
+    await pool.query(
+      `UPDATE checklist
+       SET status = NULL,
+           submission_date = NULL,
+           remark = NULL,
+           image = NULL,
+           user_reply = NULL,
+           admin_done = NULL,
+           admin_done_remarks = NULL,
+           admin_reply = NULL
+       WHERE task_id = ANY($1::int[])`,
+      [task_ids]
+    );
+
+    res.json({ message: "Tasks reverted to checklist successfully" });
+  } catch (err) {
+    console.error("❌ revertChecklistAdminDone Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// -----------------------------------------
+// 6️⃣ SEND WHATSAPP NOTIFICATION (Admin Only)
 // -----------------------------------------
 export const sendWhatsAppNotification = async (req, res) => {
   try {
