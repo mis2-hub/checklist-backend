@@ -317,9 +317,10 @@ export const adminDoneChecklist = async (req, res) => {
 // -----------------------------------------
 export const revertChecklistAdminDone = async (req, res) => {
   try {
-    const task_ids = req.body; // array of task_ids
+    const { task_id } = req.body; // array of task_ids
+    
 
-    if (!Array.isArray(task_ids) || task_ids.length === 0)
+    if (task_id.length === 0)
       return res.status(400).json({ error: "task_ids array is required" });
 
     await pool.query(
@@ -333,7 +334,7 @@ export const revertChecklistAdminDone = async (req, res) => {
            admin_done_remarks = NULL,
            admin_reply = NULL
        WHERE task_id = ANY($1::int[])`,
-      [task_ids]
+      [task_id]
     );
 
     res.json({ message: "Tasks reverted to checklist successfully" });
