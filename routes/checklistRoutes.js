@@ -4,6 +4,7 @@ import {
   getChecklistHistory,
   updateChecklist,
   adminDoneChecklist,
+  revertChecklistAdminDone,
   sendWhatsAppNotification,
   deleteChecklistInRange,
   updateChecklistAdminRemarks,
@@ -17,6 +18,7 @@ router.get("/history", getChecklistHistory);
 router.post("/update", updateChecklist);
 router.post("/delete-range", deleteChecklistInRange);
 router.post("/admin-done", adminDoneChecklist);
+router.post("/admin-done-revert", revertChecklistAdminDone);
 router.post("/send-whatsapp", sendWhatsAppNotification);
 router.patch("/:task_id/admin-remarks", updateChecklistAdminRemarks);
 router.patch("/:task_id/user-remarks", updateChecklistUserRemarks);

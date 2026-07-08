@@ -14,11 +14,24 @@ export const getPendingChecklist = async (req, res) => {
     const limit = 50;
     const offset = (page - 1) * limit;
 
-    // Include future tasks up to 1 year ahead (frontend will filter by frequency)
-    // This allows showing upcoming tasks based on frequency (daily: +1 day, weekly: +7 days, etc.)
+    // Show all overdue/today tasks + upcoming tasks within a window that depends on
+    // frequency (daily: +1 day, weekly: +7, fortnightly: +14, monthly: +30,
+    // quarterly: +90, yearly: +365). This must mirror the frontend's per-frequency
+    // filter so that totalCount (and therefore the page count) matches exactly what
+    // is displayed — otherwise far-future task instances inflate the page count and
+    // produce empty pages.
     let where = `
   submission_date IS NULL
-  AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '365 days'
+  AND (
+    (LOWER(frequency) = 'daily'       AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '1 day')   OR
+    (LOWER(frequency) = 'weekly'      AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '7 days')  OR
+    (LOWER(frequency) = 'fortnightly' AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '14 days') OR
+    (LOWER(frequency) = 'monthly'     AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '30 days') OR
+    (LOWER(frequency) = 'quarterly'   AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '90 days') OR
+    (LOWER(frequency) = 'yearly'      AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '365 days') OR
+    (COALESCE(LOWER(frequency), '') NOT IN ('daily','weekly','fortnightly','monthly','quarterly','yearly')
+       AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '1 day')
+  )
 `;
 
     // ⭐ If user is NOT admin → filter by name
@@ -135,6 +148,8 @@ export const getChecklistHistory = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const username = req.query.username;
     const role = req.query.role;
+    const search = (req.query.search || "").trim();
+    const approvalStatus = (req.query.approvalStatus || "all").trim();
 
     const limit = 50;
     const offset = (page - 1) * limit;
@@ -146,8 +161,36 @@ export const getChecklistHistory = async (req, res) => {
       where += ` AND (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%') `;
     }
 
+    // ⭐ Approval status filter (applied server-side so the page count matches the
+    // displayed rows — otherwise approved matches inflate the count and produce empty pages)
+    if (approvalStatus === "pending") {
+      where += ` AND admin_done IS DISTINCT FROM 'Done' `;
+    } else if (approvalStatus === "completed") {
+      where += ` AND admin_done = 'Done' `;
+    }
+
+    // 🔍 Global search across the whole table (not just the current page)
+    const params = [limit, offset];
+    if (search) {
+      params.push(`%${search}%`);
+      const s = `$${params.length}`;
+      where += ` AND (
+        task_id::text ILIKE ${s} OR
+        department ILIKE ${s} OR
+        given_by ILIKE ${s} OR
+        name ILIKE ${s} OR
+        task_description ILIKE ${s} OR
+        frequency ILIKE ${s} OR
+        remark ILIKE ${s} OR
+        status::text ILIKE ${s} OR
+        admin_done_remarks ILIKE ${s} OR
+        user_reply ILIKE ${s} OR
+        admin_reply ILIKE ${s}
+      )`;
+    }
+
     const query = `
-      SELECT 
+      SELECT
         task_id,
         department,
         given_by,
@@ -175,7 +218,7 @@ export const getChecklistHistory = async (req, res) => {
       LIMIT $1 OFFSET $2
     `;
 
-    const { rows } = await pool.query(query, [limit, offset]);
+    const { rows } = await pool.query(query, params);
 
     const totalCount = rows.length > 0 ? rows[0].total_count : 0;
 
@@ -216,15 +259,17 @@ export const updateChecklist = async (req, res) => {
         let finalImageUrl = null;
 
         if (item.image && typeof item.image === "string") {
-          if (item.image.startsWith("data:image")) {
-            // Base64 → Buffer
-            const base64Data = item.image.split(";base64,").pop();
-            const buffer = Buffer.from(base64Data, "base64");
+          const dataUrlMatch = item.image.match(/^data:([^;]+);base64,(.+)$/s);
+          if (dataUrlMatch) {
+            // Base64 → Buffer (supports images, PDFs, or any other file type)
+            const mimetype = dataUrlMatch[1];
+            const buffer = Buffer.from(dataUrlMatch[2], "base64");
+            const extension = mimetype === "application/pdf" ? "pdf" : (mimetype.split("/")[1] || "jpg");
 
             const fakeFile = {
-              originalname: `task_${item.taskId}_${Date.now()}.jpg`,
+              originalname: `task_${item.taskId}_${Date.now()}.${extension}`,
               buffer,
-              mimetype: "image/jpeg",
+              mimetype,
             };
 
             // Upload to S3
@@ -313,7 +358,39 @@ export const adminDoneChecklist = async (req, res) => {
 };
 
 // -----------------------------------------
-// 5️⃣ SEND WHATSAPP NOTIFICATION (Admin Only)
+// 5️⃣ REVERT TO CHECKLIST (Admin Only)
+// -----------------------------------------
+export const revertChecklistAdminDone = async (req, res) => {
+  try {
+    const { task_id } = req.body; // array of task_ids
+    
+
+    if (task_id.length === 0)
+      return res.status(400).json({ error: "task_ids array is required" });
+
+    await pool.query(
+      `UPDATE checklist
+       SET status = NULL,
+           submission_date = NULL,
+           remark = NULL,
+           image = NULL,
+           user_reply = NULL,
+           admin_done = NULL,
+           admin_done_remarks = NULL,
+           admin_reply = NULL
+       WHERE task_id = ANY($1::int[])`,
+      [task_id]
+    );
+
+    res.json({ message: "Tasks reverted to checklist successfully" });
+  } catch (err) {
+    console.error("❌ revertChecklistAdminDone Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// -----------------------------------------
+// 6️⃣ SEND WHATSAPP NOTIFICATION (Admin Only)
 // -----------------------------------------
 export const sendWhatsAppNotification = async (req, res) => {
   try {

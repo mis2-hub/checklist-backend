@@ -50,3 +50,7 @@ temp/
 
 # Misc
 package-lock.json
+WHATSAPP_TEMPLATES.md
+WP_TEMPLATES.md
+create-whatsapp-templates.js
+.claude

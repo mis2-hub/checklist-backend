@@ -134,8 +134,10 @@ const sendMetaWhatsApp = async (payload) => {
     return { success: true, data: response.data };
 
   } catch (error) {
+    // This will print the exact reason Meta rejected the message
+    console.log("Meta API Error Details:", JSON.stringify(error.response?.data || error.message, null, 2));
+    
     const errorData = error.response?.data || error.message;
-    console.error('❌ Meta WhatsApp send error:', JSON.stringify(errorData, null, 2));
     return { success: false, error: errorData };
   }
 };
