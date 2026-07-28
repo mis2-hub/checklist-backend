@@ -8,13 +8,15 @@ import {
   sendWhatsAppNotification,
   deleteChecklistInRange,
   updateChecklistAdminRemarks,
-  updateChecklistUserRemarks
+  updateChecklistUserRemarks,
+  getChecklistFilterOptions
 } from "../controllers/checklistController.js";
 
 const router = express.Router();
 
 router.get("/pending", getPendingChecklist);
 router.get("/history", getChecklistHistory);
+router.get("/filter-options", getChecklistFilterOptions);
 router.post("/update", updateChecklist);
 router.post("/delete-range", deleteChecklistInRange);
 router.post("/admin-done", adminDoneChecklist);

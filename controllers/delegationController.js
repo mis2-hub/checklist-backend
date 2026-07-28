@@ -11,106 +11,106 @@ export const fetchDelegationDataSortByDate = async (req, res) => {
   const username = req.query.username;
 
   try {
-    let query = "";
-
-    console.log("PARAMS →", req.query);
+    const sqlParams = [];
+    let paramIndex = 1;
+    let whereClause = `
+      ((status IS NULL OR status = '' OR status = 'extend' OR status = 'pending')
+      OR (planned_date IS NOT NULL AND submission_date IS NULL))
+    `;
 
     // USER: only own pending
-    if (role === "user") {
-      query = `
-        SELECT 
-          task_id,
-          department,
-          given_by,
-          name,
-          task_description,
-          frequency,
-          enable_reminder,
-          require_attachment,
-          to_char(planned_date, 'YYYY-MM-DD HH24:MI:SS') as planned_date,
-          status,
-          to_char(task_start_date, 'YYYY-MM-DD HH24:MI:SS') as task_start_date,
-          image,
-          to_char(submission_date, 'YYYY-MM-DD HH24:MI:SS') as submission_date,
-          remarks,
-          adminremarks,
-          to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at,
-          to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at,
-          color_code_for,
-          delay
-        FROM delegation
-        WHERE (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%')
-        AND (
-          (status IS NULL OR status = '' OR status = 'extend' OR status = 'pending')
-          OR (planned_date IS NOT NULL AND submission_date IS NULL)
-        )
-        ORDER BY task_start_date ASC;
-      `;
+    if (role === "user" && username) {
+      whereClause += ` AND (LOWER($${paramIndex}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))`;
+      sqlParams.push(username);
+      paramIndex++;
     }
 
-    // ADMIN: fetch ALL pending tasks (ignore user_access)
-    else if (role === "admin" || role === "super_admin" || role === "pc role") {
-      query = `
-        SELECT 
-          task_id,
-          department,
-          given_by,
-          name,
-          task_description,
-          frequency,
-          enable_reminder,
-          require_attachment,
-          to_char(planned_date, 'YYYY-MM-DD HH24:MI:SS') as planned_date,
-          status,
-          to_char(task_start_date, 'YYYY-MM-DD HH24:MI:SS') as task_start_date,
-          image,
-          to_char(submission_date, 'YYYY-MM-DD HH24:MI:SS') as submission_date,
-          remarks,
-          adminremarks,
-          to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at,
-          to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at,
-          color_code_for,
-          delay
-        FROM delegation
-        WHERE (
-          (status IS NULL OR status = '' OR status = 'extend' OR status = 'pending')
-          OR (planned_date IS NOT NULL AND submission_date IS NULL)
-        )
-        ORDER BY task_start_date ASC;
-      `;
+    // Search filter
+    if (req.query.search && req.query.search.trim()) {
+      whereClause += ` AND (
+        LOWER(name) LIKE $${paramIndex} OR
+        LOWER(task_description) LIKE $${paramIndex} OR
+        LOWER(department) LIKE $${paramIndex} OR
+        LOWER(given_by) LIKE $${paramIndex} OR
+        CAST(task_id AS TEXT) LIKE $${paramIndex}
+      )`;
+      sqlParams.push(`%${req.query.search.trim().toLowerCase()}%`);
+      paramIndex++;
     }
 
-    // NO ROLE (fallback)
-    else {
-      query = `
-        SELECT 
-          task_id,
-          department,
-          given_by,
-          name,
-          task_description,
-          frequency,
-          enable_reminder,
-          require_attachment,
-          to_char(planned_date, 'YYYY-MM-DD HH24:MI:SS') as planned_date,
-          status,
-          to_char(task_start_date, 'YYYY-MM-DD HH24:MI:SS') as task_start_date,
-          image,
-          to_char(submission_date, 'YYYY-MM-DD HH24:MI:SS') as submission_date,
-          remarks,
-          adminremarks,
-          to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at,
-          to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at,
-          color_code_for,
-          delay
-        FROM delegation
-        ORDER BY task_start_date ASC;
-      `;
+    // Given By filter
+    if (req.query.givenBy && req.query.givenBy.trim() !== "all" && req.query.givenBy.trim() !== "") {
+      whereClause += ` AND LOWER(given_by) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.givenBy.trim());
     }
 
-    console.log("FINAL QUERY →", query);
+    // Name filter (explicit name column filter)
+    if (req.query.name && req.query.name.trim() !== "all" && req.query.name.trim() !== "") {
+      whereClause += ` AND (LOWER($${paramIndex++}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))`;
+      sqlParams.push(req.query.name.trim());
+    }
 
-    const { rows } = await pool.query(query);
+    // Date range filters
+    if (req.query.startDate) {
+      whereClause += ` AND task_start_date::date >= $${paramIndex++}::date`;
+      sqlParams.push(req.query.startDate);
+    }
+    if (req.query.endDate) {
+      whereClause += ` AND task_start_date::date <= $${paramIndex++}::date`;
+      sqlParams.push(req.query.endDate);
+    }
+
+    // Frequency filter
+    if (req.query.frequency && req.query.frequency.trim() !== "all" && req.query.frequency.trim() !== "") {
+      whereClause += ` AND LOWER(frequency) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.frequency.trim());
+    }
+
+    // Reminder filter
+    if (req.query.reminder && req.query.reminder.trim() !== "all" && req.query.reminder.trim() !== "") {
+      whereClause += ` AND LOWER(enable_reminder) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.reminder.trim());
+    }
+
+    // Attachment filter
+    if (req.query.attachment && req.query.attachment.trim() !== "all" && req.query.attachment.trim() !== "") {
+      whereClause += ` AND LOWER(require_attachment) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.attachment.trim());
+    }
+
+    // Status filter
+    if (req.query.status && req.query.status.trim() !== "all" && req.query.status.trim() !== "") {
+      whereClause += ` AND LOWER(status) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.status.trim());
+    }
+
+    const query = `
+      SELECT 
+        task_id,
+        department,
+        given_by,
+        name,
+        task_description,
+        frequency,
+        enable_reminder,
+        require_attachment,
+        to_char(planned_date, 'YYYY-MM-DD HH24:MI:SS') as planned_date,
+        status,
+        to_char(task_start_date, 'YYYY-MM-DD HH24:MI:SS') as task_start_date,
+        image,
+        to_char(submission_date, 'YYYY-MM-DD HH24:MI:SS') as submission_date,
+        remarks,
+        adminremarks,
+        to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at,
+        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') as updated_at,
+        color_code_for,
+        delay
+      FROM delegation
+      WHERE ${whereClause}
+      ORDER BY task_start_date ASC;
+    `;
+
+    const { rows } = await pool.query(query, sqlParams);
     return res.json(rows);
 
   } catch (err) {
@@ -129,7 +129,105 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
   const userAccess = req.query.user_access;
 
   try {
-    let query = `
+    const sqlParams = [];
+    let paramIndex = 1;
+    let whereClause = "1=1";
+
+    // USER LEVEL FILTER
+    if (role === "user" && username) {
+      whereClause += ` AND (LOWER($${paramIndex}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(dd.name, ',')) n))`;
+      sqlParams.push(username);
+      paramIndex++;
+    }
+
+    // ADMIN FILTER — Fetch based on user_access departments
+    if ((role === "admin" || role === "super_admin" || role === "pc role") && userAccess) {
+      const depts = userAccess
+        .replace(/\+/g, " ")
+        .split(",")
+        .map((d) => d.trim().toLowerCase());
+      
+      whereClause += ` AND LOWER(d.department) = ANY($${paramIndex++})`;
+      sqlParams.push(depts);
+    }
+
+    // Search filter
+    if (req.query.search && req.query.search.trim()) {
+      whereClause += ` AND (
+        LOWER(dd.name) LIKE $${paramIndex} OR
+        LOWER(dd.task_description) LIKE $${paramIndex} OR
+        LOWER(d.department) LIKE $${paramIndex} OR
+        LOWER(dd.given_by) LIKE $${paramIndex} OR
+        CAST(dd.task_id AS TEXT) LIKE $${paramIndex}
+      )`;
+      sqlParams.push(`%${req.query.search.trim().toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // Given By filter
+    if (req.query.givenBy && req.query.givenBy.trim() !== "all" && req.query.givenBy.trim() !== "") {
+      whereClause += ` AND LOWER(dd.given_by) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.givenBy.trim());
+    }
+
+    // Name filter (explicit name column filter)
+    if (req.query.name && req.query.name.trim() !== "all" && req.query.name.trim() !== "") {
+      whereClause += ` AND (LOWER($${paramIndex++}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(dd.name, ',')) n))`;
+      sqlParams.push(req.query.name.trim());
+    }
+
+    // Date range filters (on dd.created_at)
+    if (req.query.startDate) {
+      whereClause += ` AND dd.created_at::date >= $${paramIndex++}::date`;
+      sqlParams.push(req.query.startDate);
+    }
+    if (req.query.endDate) {
+      whereClause += ` AND dd.created_at::date <= $${paramIndex++}::date`;
+      sqlParams.push(req.query.endDate);
+    }
+
+    // Frequency filter
+    if (req.query.frequency && req.query.frequency.trim() !== "all" && req.query.frequency.trim() !== "") {
+      whereClause += ` AND LOWER(d.frequency) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.frequency.trim());
+    }
+
+    // Reminder filter
+    if (req.query.reminder && req.query.reminder.trim() !== "all" && req.query.reminder.trim() !== "") {
+      whereClause += ` AND LOWER(d.enable_reminder) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.reminder.trim());
+    }
+
+    // Attachment filter
+    if (req.query.attachment && req.query.attachment.trim() !== "all" && req.query.attachment.trim() !== "") {
+      whereClause += ` AND LOWER(d.require_attachment) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.attachment.trim());
+    }
+
+    // Status filter
+    if (req.query.status && req.query.status.trim() !== "all" && req.query.status.trim() !== "") {
+      whereClause += ` AND LOWER(dd.status) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.status.trim());
+    }
+
+    // Admin Status Filter
+    if (req.query.adminStatus && req.query.adminStatus.trim() !== "all") {
+      const adminStatus = req.query.adminStatus.trim().toLowerCase();
+      if (adminStatus === "pending") {
+        whereClause += " AND dd.admin_done IS DISTINCT FROM 'Done'";
+      } else if (adminStatus === "completed" || adminStatus === "approved") {
+        whereClause += " AND dd.admin_done = 'Done'";
+      }
+    } else if (req.query.approvalStatus && req.query.approvalStatus.trim() !== "all") {
+      const approvalStatus = req.query.approvalStatus.trim().toLowerCase();
+      if (approvalStatus === "pending") {
+        whereClause += " AND dd.admin_done IS DISTINCT FROM 'Done'";
+      } else if (approvalStatus === "completed" || approvalStatus === "approved") {
+        whereClause += " AND dd.admin_done = 'Done'";
+      }
+    }
+
+    const query = `
       SELECT 
         dd.id,
         dd.task_id,
@@ -149,74 +247,37 @@ export const fetchDelegation_DoneDataSortByDate = async (req, res) => {
         d.department
       FROM delegation_done dd
       LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
+      WHERE ${whereClause}
       ORDER BY dd.created_at DESC;
     `;
 
-    // USER LEVEL FILTER
-    if (role === "user") {
-      query = `
-        SELECT 
-          dd.id,
-          dd.task_id,
-          dd.status,
-          to_char(dd.next_extend_date, 'YYYY-MM-DD HH24:MI:SS') as next_extend_date,
-          dd.reason,
-          dd.image_url,
-          dd.name,
-          dd.task_description,
-          dd.given_by,
-          to_char(dd.created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at,
-          dd.admin_done,
-          dd.admin_done_remarks,
-          to_char(d.planned_date, 'YYYY-MM-DD HH24:MI:SS') as planned_date,
-          to_char(d.submission_date, 'YYYY-MM-DD HH24:MI:SS') as submission_date,
-          d.adminremarks,
-          d.department
-        FROM delegation_done dd
-        LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
-        WHERE (dd.name = '${username}' OR dd.name LIKE '${username},%' OR dd.name LIKE '%, ${username}%' OR dd.name LIKE '%,${username}%')
-        ORDER BY dd.created_at DESC;
-      `;
-    }
-
-    // ADMIN FILTER — Fetch based on user_access departments
-    if ((role === "admin" || role === "super_admin" || role === "pc role") && userAccess) {
-      const depts = userAccess
-        .replace(/\+/g, " ")
-        .split(",")
-        .map((d) => `'${d.trim().toLowerCase()}'`)
-        .join(",");
-
-      query = `
-        SELECT 
-          dd.id,
-          dd.task_id,
-          dd.status,
-          to_char(dd.next_extend_date, 'YYYY-MM-DD HH24:MI:SS') as next_extend_date,
-          dd.reason,
-          dd.image_url,
-          dd.name,
-          dd.task_description,
-          dd.given_by,
-          to_char(dd.created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at,
-          dd.admin_done,
-          dd.admin_done_remarks,
-          to_char(d.planned_date, 'YYYY-MM-DD HH24:MI:SS') as planned_date,
-          to_char(d.submission_date, 'YYYY-MM-DD HH24:MI:SS') as submission_date,
-          d.adminremarks,
-          d.department
-        FROM delegation_done dd
-        LEFT JOIN delegation d ON dd.task_id::BIGINT = d.task_id
-        WHERE LOWER(d.department) IN (${depts})
-        ORDER BY dd.created_at DESC;
-      `;
-    }
-
-    const { rows } = await pool.query(query);
+    const { rows } = await pool.query(query, sqlParams);
     return res.json(rows);
   } catch (err) {
     console.log("Done fetch error:", err);
     return res.status(400).json({ error: err.message });
+  }
+};
+
+
+/* ------------------------------------------------------
+   GET DELEGATION FILTER OPTIONS
+------------------------------------------------------ */
+export const getDelegationFilterOptions = async (req, res) => {
+  try {
+    const doersRes = await pool.query(
+      `SELECT DISTINCT TRIM(LOWER(n)) as doer FROM delegation, unnest(string_to_array(name, ',')) n WHERE name IS NOT NULL AND name != '' ORDER BY doer`
+    );
+    const creatorsRes = await pool.query(
+      `SELECT DISTINCT TRIM(LOWER(given_by)) as creator FROM delegation WHERE given_by IS NOT NULL AND given_by != '' ORDER BY creator`
+    );
+    res.json({
+      doers: doersRes.rows.map(r => r.doer),
+      creators: creatorsRes.rows.map(r => r.creator)
+    });
+  } catch (error) {
+    console.error("❌ Error fetching delegation filter options:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
 

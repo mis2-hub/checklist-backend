@@ -5,10 +5,13 @@ import {
   deleteChecklistTasks,
   deleteDelegationTasks,
   updateChecklistTask,
-  fetchUsers
+  fetchUsers,
+  getQuickTaskFilterOptions
 } from "../controllers/quickTaskController.js";
 
 const router = express.Router();
+
+router.get("/checklist-filter-options", getQuickTaskFilterOptions);
 
 router.post("/checklist", async (req, res) => {
   const result = await fetchChecklist(
@@ -16,7 +19,11 @@ router.post("/checklist", async (req, res) => {
     req.body.pageSize,
     req.body.nameFilter,
     req.body.startDate,
-    req.body.endDate
+    req.body.endDate,
+    req.body.givenByFilter,
+    req.body.frequencyFilter,
+    req.body.reminderFilter,
+    req.body.attachmentFilter
   );
   res.json(result);
 });
@@ -27,7 +34,11 @@ router.post("/delegation", async (req, res) => {
     req.body.pageSize,
     req.body.nameFilter,
     req.body.startDate,
-    req.body.endDate
+    req.body.endDate,
+    req.body.givenByFilter,
+    req.body.frequencyFilter,
+    req.body.reminderFilter,
+    req.body.attachmentFilter
   );
   res.json(result);
 });

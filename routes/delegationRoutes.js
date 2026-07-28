@@ -7,13 +7,15 @@ import {
   sendDelegationWhatsAppNotification,
   updateAdminRemarks,
   updateUserRemarks,
-  revertDelegationTask
+  revertDelegationTask,
+  getDelegationFilterOptions
 } from "../controllers/delegationController.js";
 
 const router = express.Router();
 
 router.get("/delegation", fetchDelegationDataSortByDate);
 router.get("/delegation-done", fetchDelegation_DoneDataSortByDate);
+router.get("/filter-options", getDelegationFilterOptions);
 router.post("/delegation/submit", insertDelegationDoneAndUpdate);
 router.post("/delegation/admin-done", adminDoneDelegation);
 router.post("/delegation/send-whatsapp", sendDelegationWhatsAppNotification);

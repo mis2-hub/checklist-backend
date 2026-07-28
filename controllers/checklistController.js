@@ -1,4 +1,5 @@
 import pool from "../config/db.js";
+import { buildChecklistFilters } from "../services/filterService.js";
 
 import upload, { uploadToS3 } from "../middleware/s3Upload.js";
 import { sendWhatsAppMessage, sendUrgentAlertNotification } from "../services/whatsappService.js";
@@ -14,41 +15,80 @@ export const getPendingChecklist = async (req, res) => {
     const limit = 50;
     const offset = (page - 1) * limit;
 
-    // Show all overdue/today tasks + upcoming tasks within a window that depends on
-    // frequency (daily: +1 day, weekly: +7, fortnightly: +14, monthly: +30,
-    // quarterly: +90, yearly: +365). This must mirror the frontend's per-frequency
-    // filter so that totalCount (and therefore the page count) matches exactly what
-    // is displayed — otherwise far-future task instances inflate the page count and
-    // produce empty pages.
-    let where = `
-  submission_date IS NULL
-  AND (
-    (LOWER(frequency) = 'daily'       AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '1 day')   OR
-    (LOWER(frequency) = 'weekly'      AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '7 days')  OR
-    (LOWER(frequency) = 'fortnightly' AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '14 days') OR
-    (LOWER(frequency) = 'monthly'     AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '30 days') OR
-    (LOWER(frequency) = 'quarterly'   AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '90 days') OR
-    (LOWER(frequency) = 'yearly'      AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '365 days') OR
-    (COALESCE(LOWER(frequency), '') NOT IN ('daily','weekly','fortnightly','monthly','quarterly','yearly')
-       AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '1 day')
-  )
-`;
+    const sqlParams = [];
+    let paramIndex = 1;
+    let whereClause = `
+      submission_date IS NULL
+      AND (
+        (LOWER(frequency) = 'daily'       AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '1 day')   OR
+        (LOWER(frequency) = 'weekly'      AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '7 days')  OR
+        (LOWER(frequency) = 'fortnightly' AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '14 days') OR
+        (LOWER(frequency) = 'monthly'     AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '30 days') OR
+        (LOWER(frequency) = 'quarterly'   AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '90 days') OR
+        (LOWER(frequency) = 'yearly'      AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '365 days') OR
+        (COALESCE(LOWER(frequency), '') NOT IN ('daily','weekly','fortnightly','monthly','quarterly','yearly')
+           AND DATE(task_start_date) <= CURRENT_DATE + INTERVAL '1 day')
+      )
+    `;
 
-    // ⭐ If user is NOT admin → filter by name
+    // 1. Role name filter
     if (role !== "admin" && role !== "super_admin" && role !== "pc role" && username) {
-      where += ` AND (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%') `;
+      whereClause += ` AND (LOWER($${paramIndex}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))`;
+      sqlParams.push(username);
+      paramIndex++;
     }
 
-    // ⭐ Add search filter if search term is provided
-    if (search.trim()) {
-      const searchLower = search.toLowerCase().replace(/'/g, "''"); // Escape single quotes
-      where += ` AND (
-        LOWER(name) LIKE '%${searchLower}%' OR
-        LOWER(task_description) LIKE '%${searchLower}%' OR
-        LOWER(department) LIKE '%${searchLower}%' OR
-        LOWER(given_by) LIKE '%${searchLower}%' OR
-        CAST(task_id AS TEXT) LIKE '%${searchLower}%'
-      ) `;
+    // 2. Search filter
+    if (search && search.trim()) {
+      whereClause += ` AND (
+        LOWER(name) LIKE $${paramIndex} OR
+        LOWER(task_description) LIKE $${paramIndex} OR
+        LOWER(department) LIKE $${paramIndex} OR
+        LOWER(given_by) LIKE $${paramIndex} OR
+        CAST(task_id AS TEXT) LIKE $${paramIndex}
+      )`;
+      sqlParams.push(`%${search.trim().toLowerCase()}%`);
+      paramIndex++;
+    }
+
+    // 3. Given By filter
+    if (req.query.givenBy && req.query.givenBy.trim() !== "all" && req.query.givenBy.trim() !== "") {
+      whereClause += ` AND LOWER(given_by) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.givenBy.trim());
+    }
+
+    // 4. Name filter
+    if (req.query.name && req.query.name.trim() !== "all" && req.query.name.trim() !== "") {
+      whereClause += ` AND (LOWER($${paramIndex++}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))`;
+      sqlParams.push(req.query.name.trim());
+    }
+
+    // 5. Date range filters
+    if (req.query.startDate) {
+      whereClause += ` AND task_start_date::date >= $${paramIndex++}::date`;
+      sqlParams.push(req.query.startDate);
+    }
+    if (req.query.endDate) {
+      whereClause += ` AND task_start_date::date <= $${paramIndex++}::date`;
+      sqlParams.push(req.query.endDate);
+    }
+
+    // 6. Frequency filter
+    if (req.query.frequency && req.query.frequency.trim() !== "all" && req.query.frequency.trim() !== "") {
+      whereClause += ` AND LOWER(frequency) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.frequency.trim());
+    }
+
+    // 7. Reminder filter
+    if (req.query.reminder && req.query.reminder.trim() !== "all" && req.query.reminder.trim() !== "") {
+      whereClause += ` AND LOWER(enable_reminder) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.reminder.trim());
+    }
+
+    // 8. Attachment filter
+    if (req.query.attachment && req.query.attachment.trim() !== "all" && req.query.attachment.trim() !== "") {
+      whereClause += ` AND LOWER(require_attachment) = LOWER($${paramIndex++})`;
+      sqlParams.push(req.query.attachment.trim());
     }
 
     const query = `
@@ -75,12 +115,14 @@ export const getPendingChecklist = async (req, res) => {
         admin_reply,
         COUNT(*) OVER() AS total_count
       FROM checklist
-      WHERE ${where}
+      WHERE ${whereClause}
       ORDER BY task_start_date ASC
-      LIMIT $1 OFFSET $2
+      LIMIT $${paramIndex++} OFFSET $${paramIndex}
     `;
 
-    const { rows } = await pool.query(query, [limit, offset]);
+    const dataParams = [...sqlParams, limit, offset];
+
+    const { rows } = await pool.query(query, dataParams);
 
     const totalCount = rows.length > 0 ? rows[0].total_count : 0;
 
@@ -146,48 +188,16 @@ export const deleteChecklistInRange = async (req, res) => {
 export const getChecklistHistory = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const username = req.query.username;
-    const role = req.query.role;
-    const search = (req.query.search || "").trim();
-    const approvalStatus = (req.query.approvalStatus || "all").trim();
-
     const limit = 50;
     const offset = (page - 1) * limit;
 
-    let where = `submission_date IS NOT NULL`;
+    // 1. Build dynamic filters and parameters from request queries
+    const { whereClause, values } = buildChecklistFilters(req.query);
 
-    // ⭐ Normal users see only their own tasks
-    if (role !== "admin" && role !== "super_admin" && role !== "pc role" && username) {
-      where += ` AND (name = '${username}' OR name LIKE '${username},%' OR name LIKE '%, ${username}%' OR name LIKE '%,${username}%') `;
-    }
-
-    // ⭐ Approval status filter (applied server-side so the page count matches the
-    // displayed rows — otherwise approved matches inflate the count and produce empty pages)
-    if (approvalStatus === "pending") {
-      where += ` AND admin_done IS DISTINCT FROM 'Done' `;
-    } else if (approvalStatus === "completed") {
-      where += ` AND admin_done = 'Done' `;
-    }
-
-    // 🔍 Global search across the whole table (not just the current page)
-    const params = [limit, offset];
-    if (search) {
-      params.push(`%${search}%`);
-      const s = `$${params.length}`;
-      where += ` AND (
-        task_id::text ILIKE ${s} OR
-        department ILIKE ${s} OR
-        given_by ILIKE ${s} OR
-        name ILIKE ${s} OR
-        task_description ILIKE ${s} OR
-        frequency ILIKE ${s} OR
-        remark ILIKE ${s} OR
-        status::text ILIKE ${s} OR
-        admin_done_remarks ILIKE ${s} OR
-        user_reply ILIKE ${s} OR
-        admin_reply ILIKE ${s}
-      )`;
-    }
+    // 2. Append limit and offset for query execution (maintaining pagination)
+    const queryParams = [...values, limit, offset];
+    const limitPlaceholder = `$${queryParams.length - 1}`;
+    const offsetPlaceholder = `$${queryParams.length}`;
 
     const query = `
       SELECT
@@ -213,12 +223,12 @@ export const getChecklistHistory = async (req, res) => {
         admin_reply,
         COUNT(*) OVER() AS total_count
       FROM checklist
-      WHERE ${where}
+      ${whereClause}
       ORDER BY submission_date DESC
-      LIMIT $1 OFFSET $2
+      LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}
     `;
 
-    const { rows } = await pool.query(query, params);
+    const { rows } = await pool.query(query, queryParams);
 
     const totalCount = rows.length > 0 ? rows[0].total_count : 0;
 
@@ -363,7 +373,7 @@ export const adminDoneChecklist = async (req, res) => {
 export const revertChecklistAdminDone = async (req, res) => {
   try {
     const { task_id } = req.body; // array of task_ids
-    
+
 
     if (task_id.length === 0)
       return res.status(400).json({ error: "task_ids array is required" });
@@ -404,7 +414,7 @@ export const sendWhatsAppNotification = async (req, res) => {
 
     for (const item of items) {
       const allDoers = (item.name || '').split(',').map(n => n.trim()).filter(Boolean);
-      
+
       for (const doerName of allDoers) {
         // Look up doer's phone number from users table
         const userResult = await pool.query(
@@ -509,3 +519,41 @@ export const updateChecklistUserRemarks = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// -----------------------------------------
+// 8️⃣ GET CHECKLIST FILTER OPTIONS (Unique Depts & Names)
+// -----------------------------------------
+export const getChecklistFilterOptions = async (req, res) => {
+  try {
+    const [deptResult, doerResult, givenByResult] = await Promise.all([
+      pool.query(`
+        SELECT DISTINCT department 
+        FROM checklist 
+        WHERE department IS NOT NULL AND department <> '' 
+        ORDER BY department
+      `),
+      pool.query(`
+        SELECT DISTINCT TRIM(unnested_name) AS name 
+        FROM checklist, UNNEST(string_to_array(name, ',')) AS unnested_name 
+        WHERE name IS NOT NULL AND TRIM(unnested_name) <> '' 
+        ORDER BY name
+      `),
+      pool.query(`
+        SELECT DISTINCT given_by 
+        FROM checklist 
+        WHERE given_by IS NOT NULL AND given_by <> '' 
+        ORDER BY given_by
+      `)
+    ]);
+
+    res.json({
+      departments: deptResult.rows.map(r => r.department),
+      doers: doerResult.rows.map(r => r.name),
+      givenBy: givenByResult.rows.map(r => r.given_by)
+    });
+  } catch (error) {
+    console.error("❌ Error fetching checklist filter options:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+

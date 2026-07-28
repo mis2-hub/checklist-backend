@@ -4,7 +4,13 @@ import pool from "../config/db.js";
 export const fetchChecklist = async (
   page = 0,
   pageSize = 50,
-  nameFilter = ""
+  nameFilter = "",
+  startDate = "",
+  endDate = "",
+  givenByFilter = "",
+  frequencyFilter = "",
+  reminderFilter = "",
+  attachmentFilter = ""
 ) => {
   try {
     const offset = page * pageSize;
@@ -14,8 +20,38 @@ export const fetchChecklist = async (
     let whereClause = "submission_date IS NULL";
 
     if (nameFilter) {
-      whereClause += ` AND LOWER(name) = LOWER($${paramIndex++})`;
+      whereClause += ` AND (LOWER($${paramIndex++}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))`;
       params.push(nameFilter);
+    }
+
+    if (startDate) {
+      whereClause += ` AND task_start_date::date >= $${paramIndex++}::date`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      whereClause += ` AND task_start_date::date <= $${paramIndex++}::date`;
+      params.push(endDate);
+    }
+
+    if (givenByFilter && givenByFilter !== "all" && givenByFilter !== "") {
+      whereClause += ` AND LOWER(given_by) = LOWER($${paramIndex++})`;
+      params.push(givenByFilter);
+    }
+
+    if (frequencyFilter && frequencyFilter !== "all" && frequencyFilter !== "") {
+      whereClause += ` AND LOWER(frequency) = LOWER($${paramIndex++})`;
+      params.push(frequencyFilter);
+    }
+
+    if (reminderFilter && reminderFilter !== "all" && reminderFilter !== "") {
+      whereClause += ` AND LOWER(enable_reminder) = LOWER($${paramIndex++})`;
+      params.push(reminderFilter);
+    }
+
+    if (attachmentFilter && attachmentFilter !== "all" && attachmentFilter !== "") {
+      whereClause += ` AND LOWER(require_attachment) = LOWER($${paramIndex++})`;
+      params.push(attachmentFilter);
     }
 
     // ⭐ DISTINCT ON ensures uniqueness based on (name + task_description)
@@ -64,7 +100,11 @@ export const fetchDelegation = async (
   pageSize = 50,
   nameFilter = "",
   startDate,
-  endDate
+  endDate,
+  givenByFilter = "",
+  frequencyFilter = "",
+  reminderFilter = "",
+  attachmentFilter = ""
 ) => {
   try {
     const offset = page * pageSize;
@@ -83,9 +123,29 @@ export const fetchDelegation = async (
       filters.push("task_start_date::date = CURRENT_DATE");
     }
 
-    if (nameFilter) {
-      filters.push(`LOWER(name) = LOWER($${paramIndex++})`);
-      params.push(nameFilter);
+    if (nameFilter && nameFilter.trim() !== "all" && nameFilter.trim() !== "") {
+      filters.push(`(LOWER($${paramIndex++}) = ANY(SELECT TRIM(LOWER(n)) FROM unnest(string_to_array(name, ',')) n))`);
+      params.push(nameFilter.trim());
+    }
+
+    if (givenByFilter && givenByFilter.trim() !== "all" && givenByFilter.trim() !== "") {
+      filters.push(`LOWER(given_by) = LOWER($${paramIndex++})`);
+      params.push(givenByFilter.trim());
+    }
+
+    if (frequencyFilter && frequencyFilter.trim() !== "all" && frequencyFilter.trim() !== "") {
+      filters.push(`LOWER(frequency) = LOWER($${paramIndex++})`);
+      params.push(frequencyFilter.trim());
+    }
+
+    if (reminderFilter && reminderFilter.trim() !== "all" && reminderFilter.trim() !== "") {
+      filters.push(`LOWER(enable_reminder) = LOWER($${paramIndex++})`);
+      params.push(reminderFilter.trim());
+    }
+
+    if (attachmentFilter && attachmentFilter.trim() !== "all" && attachmentFilter.trim() !== "") {
+      filters.push(`LOWER(require_attachment) = LOWER($${paramIndex++})`);
+      params.push(attachmentFilter.trim());
     }
 
     const whereClause = filters.join(" AND ");
@@ -273,5 +333,40 @@ export const fetchUsers = async () => {
   } catch (err) {
     console.log(err);
     return [];
+  }
+};
+
+// ------------------------ FETCH FILTER OPTIONS ------------------------
+export const getQuickTaskFilterOptions = async (req, res) => {
+  try {
+    const [givenByRes, nameRes, freqRes] = await Promise.all([
+      pool.query(`
+        SELECT DISTINCT given_by 
+        FROM checklist 
+        WHERE given_by IS NOT NULL AND given_by <> '' 
+        ORDER BY given_by
+      `),
+      pool.query(`
+        SELECT DISTINCT TRIM(unnested_name) AS name 
+        FROM checklist, UNNEST(string_to_array(name, ',')) AS unnested_name 
+        WHERE name IS NOT NULL AND TRIM(unnested_name) <> '' 
+        ORDER BY name
+      `),
+      pool.query(`
+        SELECT DISTINCT frequency 
+        FROM checklist 
+        WHERE frequency IS NOT NULL AND frequency <> '' 
+        ORDER BY frequency
+      `)
+    ]);
+
+    res.json({
+      givenBy: givenByRes.rows.map(r => r.given_by),
+      names: nameRes.rows.map(r => r.name),
+      frequencies: freqRes.rows.map(r => r.frequency)
+    });
+  } catch (err) {
+    console.error("Error fetching checklist filter options:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 };
