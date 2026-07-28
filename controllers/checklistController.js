@@ -188,6 +188,11 @@ export const deleteChecklistInRange = async (req, res) => {
 export const getChecklistHistory = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
+    const username = req.query.username;
+    const role = req.query.role;
+    const search = (req.query.search || "").trim();
+    const approvalStatus = (req.query.approvalStatus || "all").trim();
+
     const limit = 50;
     const offset = (page - 1) * limit;
 
@@ -198,6 +203,34 @@ export const getChecklistHistory = async (req, res) => {
     const queryParams = [...values, limit, offset];
     const limitPlaceholder = `$${queryParams.length - 1}`;
     const offsetPlaceholder = `$${queryParams.length}`;
+
+    // ⭐ Approval status filter (applied server-side so the page count matches the
+    // displayed rows — otherwise approved matches inflate the count and produce empty pages)
+    if (approvalStatus === "pending") {
+      where += ` AND admin_done IS DISTINCT FROM 'Done' `;
+    } else if (approvalStatus === "completed") {
+      where += ` AND admin_done = 'Done' `;
+    }
+
+    // 🔍 Global search across the whole table (not just the current page)
+    const params = [limit, offset];
+    if (search) {
+      params.push(`%${search}%`);
+      const s = `$${params.length}`;
+      where += ` AND (
+        task_id::text ILIKE ${s} OR
+        department ILIKE ${s} OR
+        given_by ILIKE ${s} OR
+        name ILIKE ${s} OR
+        task_description ILIKE ${s} OR
+        frequency ILIKE ${s} OR
+        remark ILIKE ${s} OR
+        status::text ILIKE ${s} OR
+        admin_done_remarks ILIKE ${s} OR
+        user_reply ILIKE ${s} OR
+        admin_reply ILIKE ${s}
+      )`;
+    }
 
     const query = `
       SELECT
@@ -373,7 +406,7 @@ export const adminDoneChecklist = async (req, res) => {
 export const revertChecklistAdminDone = async (req, res) => {
   try {
     const { task_id } = req.body; // array of task_ids
-
+    
 
     if (task_id.length === 0)
       return res.status(400).json({ error: "task_ids array is required" });
