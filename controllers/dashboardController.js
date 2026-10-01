@@ -764,12 +764,216 @@ export const getChecklistDateRangeCount = async (req, res) => {
 
     const result = await pool.query(query, params);
     const count = Number(result.rows[0].count || 0);
-    
+
     res.json(count);
 
   } catch (err) {
     console.error("DATE RANGE COUNT ERROR:", err.message);
     res.status(500).json({ error: "Error fetching date range count" });
+  }
+};
+
+// ============================================================
+// EXPORT REPORT (Dashboard -> pick date range -> PDF)
+// Same User-Wise Summary + Task-Wise Detail shape as the
+// existing Checklist/Delegation monthly reports, but for any
+// custom [startDate, endDate] range instead of a fixed month.
+// ============================================================
+
+const REPORT_TABLES = {
+  checklist: "checklist",
+  delegation: "delegation",
+};
+
+const getReportCompletedCondition = (table) =>
+  table === "checklist" ? "status = 'yes'" : "LOWER(status) = 'yes'";
+
+export const getReportSummary = async (req, res) => {
+  try {
+    const { type, startDate, endDate } = req.query;
+    const table = REPORT_TABLES[type];
+
+    if (!table) {
+      return res.status(400).json({ error: "Invalid report type" });
+    }
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: "startDate and endDate are required" });
+    }
+
+    const completedCondition = getReportCompletedCondition(table);
+
+    // Overall totals for the selected range
+    const overviewResult = await pool.query(
+      `
+        SELECT
+          COUNT(*) AS total,
+          SUM(CASE WHEN submission_date IS NOT NULL OR (${completedCondition}) THEN 1 ELSE 0 END) AS completed
+        FROM ${table}
+        WHERE task_start_date::date >= $1::date
+        AND task_start_date::date <= $2::date
+      `,
+      [startDate, endDate]
+    );
+    const overviewTotal = Number(overviewResult.rows[0].total) || 0;
+    const overviewCompleted = Number(overviewResult.rows[0].completed) || 0;
+
+    // Distinct people (splitting comma-separated assignees) within the range
+    const staffResult = await pool.query(
+      `
+        SELECT DISTINCT TRIM(individual_name) AS name
+        FROM (
+          SELECT UNNEST(regexp_split_to_array(name, ',\\s*')) AS individual_name
+          FROM ${table}
+          WHERE name IS NOT NULL AND name != ''
+          AND task_start_date::date >= $1::date
+          AND task_start_date::date <= $2::date
+        ) AS split_names
+        WHERE TRIM(individual_name) != ''
+        ORDER BY name ASC
+      `,
+      [startDate, endDate]
+    );
+
+    const users = [];
+
+    for (const row of staffResult.rows) {
+      const staffName = row.name;
+      const escapedName = staffName.replace(/'/g, "''");
+
+      const taskResult = await pool.query(
+        `
+          SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN submission_date IS NOT NULL OR (${completedCondition}) THEN 1 ELSE 0 END) AS completed,
+            SUM(
+              CASE
+                WHEN submission_date IS NOT NULL AND submission_date::date <= task_start_date::date THEN 1
+                WHEN submission_date IS NULL AND (${completedCondition}) AND task_start_date::date <= CURRENT_DATE THEN 1
+                ELSE 0
+              END
+            ) AS on_time,
+            SUM(
+              CASE
+                WHEN submission_date IS NOT NULL AND submission_date::date > task_start_date::date THEN 1
+                ELSE 0
+              END
+            ) AS delayed,
+            AVG(
+              CASE
+                WHEN submission_date IS NOT NULL AND submission_date::date > task_start_date::date
+                THEN EXTRACT(EPOCH FROM (submission_date - task_start_date)) / 86400.0
+              END
+            ) AS avg_delay_days
+          FROM ${table}
+          WHERE (
+            LOWER(TRIM(name)) = LOWER('${escapedName}')
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(regexp_split_to_array(name, ',\\s*')) AS individual_name
+              WHERE LOWER(TRIM(individual_name)) = LOWER('${escapedName}')
+            )
+          )
+          AND task_start_date::date >= $1::date
+          AND task_start_date::date <= $2::date
+        `,
+        [startDate, endDate]
+      );
+
+      const pendingTillDateResult = await pool.query(
+        `
+          SELECT COUNT(*) AS pending_till_date
+          FROM ${table}
+          WHERE (
+            LOWER(TRIM(name)) = LOWER('${escapedName}')
+            OR EXISTS (
+              SELECT 1 FROM UNNEST(regexp_split_to_array(name, ',\\s*')) AS individual_name
+              WHERE LOWER(TRIM(individual_name)) = LOWER('${escapedName}')
+            )
+          )
+          AND submission_date IS NULL
+        `
+      );
+
+      const total = Number(taskResult.rows[0].total) || 0;
+      const completed = Number(taskResult.rows[0].completed) || 0;
+      const onTime = Number(taskResult.rows[0].on_time) || 0;
+      const delayed = Number(taskResult.rows[0].delayed) || 0;
+      const avgDelayDays = taskResult.rows[0].avg_delay_days !== null
+        ? Number(taskResult.rows[0].avg_delay_days)
+        : null;
+
+      users.push({
+        name: staffName,
+        totalTasks: total,
+        completedTasks: completed,
+        pendingTasks: total - completed,
+        onTime,
+        onTimePercent: completed > 0 ? (onTime / completed) * 100 : null,
+        delayed,
+        avgDelayDays: delayed > 0 ? avgDelayDays : null,
+        pendingTillDate: Number(pendingTillDateResult.rows[0].pending_till_date) || 0,
+      });
+    }
+
+    users.sort((a, b) => b.totalTasks - a.totalTasks);
+
+    res.json({
+      overview: {
+        totalTasks: overviewTotal,
+        completedTasks: overviewCompleted,
+        pendingTasks: overviewTotal - overviewCompleted,
+      },
+      users,
+    });
+  } catch (err) {
+    console.error("❌ getReportSummary Error:", err);
+    res.status(500).json({ error: "Error generating report summary" });
+  }
+};
+
+export const getReportDetail = async (req, res) => {
+  try {
+    const { type, startDate, endDate } = req.query;
+    const table = REPORT_TABLES[type];
+
+    if (!table) {
+      return res.status(400).json({ error: "Invalid report type" });
+    }
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: "startDate and endDate are required" });
+    }
+
+    const completedCondition = getReportCompletedCondition(table);
+
+    const result = await pool.query(
+      `
+        SELECT
+          task_id,
+          department,
+          given_by,
+          name AS assigned_to,
+          task_description,
+          frequency,
+          to_char(task_start_date, 'DD-Mon-YYYY HH24:MI') AS start_date,
+          CASE WHEN submission_date IS NOT NULL
+            THEN to_char(submission_date, 'DD-Mon-YYYY HH24:MI')
+            ELSE NULL
+          END AS submission_date,
+          CASE WHEN submission_date IS NOT NULL OR (${completedCondition})
+            THEN 'Completed'
+            ELSE 'Pending'
+          END AS status
+        FROM ${table}
+        WHERE task_start_date::date >= $1::date
+        AND task_start_date::date <= $2::date
+        ORDER BY task_start_date ASC
+      `,
+      [startDate, endDate]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ getReportDetail Error:", err);
+    res.status(500).json({ error: "Error generating report detail" });
   }
 };
 

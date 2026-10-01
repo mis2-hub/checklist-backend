@@ -12,7 +12,9 @@ import {
   getNotDoneTask,
   getDashboardDataCount,
   getChecklistDateRangeCount,
-  getStaffTaskSummary
+  getStaffTaskSummary,
+  getReportSummary,
+  getReportDetail
 } from "../controllers/dashboardController.js";
 
 const router = express.Router();
@@ -37,5 +39,9 @@ router.get("/checklist/date-range", getChecklistByDateRange);
 router.get("/checklist/date-range/stats", getChecklistStatsByDate);
 router.get("/checklist/date-range/count", getChecklistDateRangeCount);
 router.get("/count", getDashboardDataCount);
+
+// EXPORT REPORT (date-range PDF export)
+router.get("/report/summary", getReportSummary);
+router.get("/report/detail", getReportDetail);
 
 export default router;
